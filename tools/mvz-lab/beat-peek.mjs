@@ -30,6 +30,12 @@ const MIN_SUB = Number(arg("min-sub", "0.25"));
 const MIN_PUNCH = Number(arg("min-punch", "0"));
 // 收紧判据后强拍更稀疏，需放宽轮询上限（每次 120ms，默认 200=24s）。
 const PATIENCE = Number(arg("patience", "200"));
+// --interval MS > 0：改为固定间隔连续取帧，不做拍点判据。
+// 测「暖核持续性」必须覆盖拍间低谷，只截拍点峰值会系统性高估琥珀面积。
+const INTERVAL = Number(arg("interval", "0"));
+// --stim off 不注入刺激、--nowait 1 跳过「等地形真的在动」的探测循环，
+// 用于检查 ?live=1 这类「没有注入信号」的真实链路是否有数据。
+const NO_WAIT = arg("nowait", "0") !== "0";
 // 透传任意额外查询串，如 --qs "punchGain=0&tailGain=0"（单变量 A/B）。
 const EXTRA_QS = arg("qs", "");
 // --fixed 打开 1/60 固定步长时钟，同一构建两次运行可逐帧对齐；
@@ -140,30 +146,42 @@ async function evl(cdp, expression) {
 		// --grid 0 表示不注入 grid=，让 ?q=N 画质档自己决定网格密度。
 		// 否则 GRID_OVERRIDE 会盖掉 QUALITY[tierIdx].grid，q=0 测的其实还是 96。
 		const gridQs = GRID === "0" ? "" : `&grid=${GRID}`;
-		const url = `http://127.0.0.1:${SERVE_PORT}/?mvz=1&rm=0&seed=7${gridQs}` +
-			`&stim=${encodeURIComponent(STIM)}${FIXED ? "&fixed=1" : ""}` +
-			(EXTRA_QS ? `&${EXTRA_QS}` : "");
+		const stimQs = STIM === "off" ? "" : `&stim=${encodeURIComponent(STIM)}`;
+		const url = `http://127.0.0.1:${SERVE_PORT}/?mvz=1&rm=0&seed=7${gridQs}${stimQs}` +
+			`${FIXED ? "&fixed=1" : ""}` + (EXTRA_QS ? `&${EXTRA_QS}` : "");
 		console.log("URL:", url);
 		await cdp.send("Page.navigate", { url });
 
-		// 等地形真的在动
-		for (let i = 0; i < 160; i++) {
-			await sleep(500);
-			const st = await evl(cdp, "window.__mvzProbe ? window.__mvzProbe.state() : null").catch(() => null);
-			if (st && st.bands && st.bands[0] > 0.05) break;
+		// 等地形真的在动。--nowait 1 用于无信号链路（?live=1），
+		// 否则 bands 恒为 0，这个循环会白等 80 秒。
+		if (NO_WAIT) {
+			await sleep(3000);
+		} else {
+			for (let i = 0; i < 160; i++) {
+				await sleep(500);
+				const st = await evl(cdp, "window.__mvzProbe ? window.__mvzProbe.state() : null").catch(() => null);
+				if (st && st.bands && st.bands[0] > 0.05) break;
+			}
 		}
 
 		const states = [];
 		for (let s = 0; s < SHOTS; s++) {
-			// 等到一次拍点峰值
 			let st = null;
-			for (let i = 0; i < PATIENCE; i++) {
+			if (INTERVAL > 0) {
+				await sleep(INTERVAL);
 				st = await evl(cdp,
 					"(()=>{const p=window.__mvzProbe;return p?{s:p.state(),b:p.beat()}:null})()"
 				).catch(() => null);
-				if (st && st.b.pulse > 0.5 && st.s.bands[0] > MIN_SUB &&
-					st.s.punch > MIN_PUNCH) break;
-				await sleep(120);
+			} else {
+				// 等到一次拍点峰值
+				for (let i = 0; i < PATIENCE; i++) {
+					st = await evl(cdp,
+						"(()=>{const p=window.__mvzProbe;return p?{s:p.state(),b:p.beat()}:null})()"
+					).catch(() => null);
+					if (st && st.b.pulse > 0.5 && st.s.bands[0] > MIN_SUB &&
+						st.s.punch > MIN_PUNCH) break;
+					await sleep(120);
+				}
 			}
 			const shot = await cdp.send("Page.captureScreenshot", { format: "png" });
 			const name = `beat-${s}.png`;
@@ -171,7 +189,7 @@ async function evl(cdp, expression) {
 			states.push({ shot: name, state: st && st.s, beat: st && st.b });
 			console.log(`${name}  warmth=${st ? st.s.warmth.toFixed(3) : "?"} ` +
 				`sub=${st ? st.s.bands[0].toFixed(3) : "?"} punch=${st ? st.s.punch.toFixed(3) : "?"}`);
-			await sleep(700);
+			if (INTERVAL <= 0) await sleep(700);
 		}
 		writeFileSync(join(OUT, "states.json"), JSON.stringify(states, null, 2));
 		ws.close();

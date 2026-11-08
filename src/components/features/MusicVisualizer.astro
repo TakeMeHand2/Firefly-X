@@ -2032,8 +2032,12 @@ const progressLabel = i18n(I18nKey.musicProgress);
 
     // 每个频段的 [攻击, 释放]（秒）。低频更快更短——鼓点的形状必须硬；
     // 高频更慢更长——镲片读成一片光晕而不是噪点。
+    // subBass 的时间常数做成旋钮（FINDINGS §15）：拍间隔 468.75ms，
+    // 而缺省释放 200ms 会让拍间包络掉到接近 0，中心柱高跌破琥珀门限。
+    var SUB_TAU_UP = numParam('subTauUp', 0.013, 0.002, 0.200);
+    var SUB_TAU_DN = numParam('subTauDn', 0.200, 0.020, 3.000);
     var BAND_TAU = [
-        [0.013, 0.200],
+        [SUB_TAU_UP, SUB_TAU_DN],
         [0.015, 0.175],
         [0.019, 0.150],
         [0.022, 0.140],
@@ -2918,6 +2922,13 @@ const progressLabel = i18n(I18nKey.musicProgress);
     // 两条时间轴就此分叉——表现为「地形慢慢动，涟漪飞快跑」。
     var SIM_MAX = 10;
     var simAcc = 0;
+    // 谷值托底（FINDINGS §15）：慢回落包络只用来抬「拍间低谷」，
+    // 取 max 而不叠加，于是拍点峰值仍由 bodyEnv 决定、不被拉长 τdn 推高。
+    // 0.85 是暖核持续性复核后的实测最优（FINDINGS §15）：连续取帧零值帧
+    // 5/10→0/10、琥珀中位 0.26→0.89%，而拍点帧琥珀只从 1.07 到 1.45%
+    // （直接拉长 τdn 到 1.0 会推到 1.75%）。?subFloor=0 可一键回退。
+    var SUB_FLOOR = numParam('subFloor', 0.85, 0, 1);
+    var subFloorEnv = 0;
     var lastEnergy = { level: 0, pan: 0, width: 0 };
 
     function integrate(h, playing) {
@@ -2933,7 +2944,10 @@ const progressLabel = i18n(I18nKey.musicProgress);
             var decay = tranEnv[b] * Math.exp(-h / 0.09);
             tranEnv[b] = tr > decay ? tr : decay;
         }
-        sm.subBass = bodyEnv[0];
+        subFloorEnv = follow(subFloorEnv, rawBands[0], h, 0.010, 1.20);
+        sm.subBass = SUB_FLOOR > 0
+            ? Math.max(bodyEnv[0], subFloorEnv * SUB_FLOOR)
+            : bodyEnv[0];
         sm.bass = bodyEnv[1];
         sm.lowMid = bodyEnv[2];
         sm.mid = bodyEnv[3];

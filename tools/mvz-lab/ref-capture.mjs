@@ -38,6 +38,9 @@ const H = Number(arg("h", "720"));
 // --secs 语义改为「热身秒数」：等 React 挂载与壁纸内部包络收敛。
 const WARM = Number(arg("secs", "4"));
 const SHOTS = Number(arg("shots", "3"));
+// --interval MS > 0：连续取帧、不做跨拍判据，覆盖拍间低谷。
+// 与 beat-peek --interval 同口径，用来比较「暖核在拍间是否还在」。
+const INTERVAL = Number(arg("interval", "0"));
 const SERVE_PORT = Number(arg("port", "4412"));
 const CDP_PORT = Number(arg("cdp", "9412"));
 const PROFILE = resolve(arg("profile", join(ROOT, `.workbuddy/tmp/mvz-chrome-ref-${process.pid}`)));
@@ -214,13 +217,20 @@ window.__beat = { phase: 0, peaks: 0, lastPeakFrame: -1 };
 			const basePeaks = base && base.peaks ? base.peaks : 0;
 			let st = base;
 			let hit = false;
-			// 等一次跨拍；要求相位仍在峰后 0.18 内（≈84ms），且壁纸已走完 1 帧。
-			// 400×8ms=3.2s 覆盖 6 拍以上，CDP 轮询抖动也能命中。
-			for (let i = 0; i < 400; i++) {
+			if (INTERVAL > 0) {
+				// 连续取帧：不做跨拍判据，覆盖拍间低谷。
+				await sleep(INTERVAL);
 				st = await read();
-				if (st && st.peaks > basePeaks && st.phase < 0.18 &&
-					st.f >= st.peakFrame + 1) { hit = true; break; }
-				await sleep(8);
+				hit = true;
+			} else {
+				// 等一次跨拍；要求相位仍在峰后 0.18 内（≈84ms），且壁纸已走完 1 帧。
+				// 400×8ms=3.2s 覆盖 6 拍以上，CDP 轮询抖动也能命中。
+				for (let i = 0; i < 400; i++) {
+					st = await read();
+					if (st && st.peaks > basePeaks && st.phase < 0.18 &&
+						st.f >= st.peakFrame + 1) { hit = true; break; }
+					await sleep(8);
+				}
 			}
 			const shot = await cdp.send("Page.captureScreenshot", { format: "png" });
 			const name = `beat-${s}.png`;
@@ -229,7 +239,7 @@ window.__beat = { phase: 0, peaks: 0, lastPeakFrame: -1 };
 			console.log(`${name}  ${hit ? "命中" : "未命中"}  peaks=${st ? st.peaks : "?"} ` +
 				`phase=${st && st.phase != null ? st.phase.toFixed(3) : "?"} ` +
 				`frames=${st ? st.f : "?"}`);
-			await sleep(220);   // 拉开到下一拍之后，避免同一拍重复取景
+			if (INTERVAL <= 0) await sleep(220);   // 拉开到下一拍之后，避免同一拍重复取景
 		}
 		writeFileSync(join(OUT, "states.json"), JSON.stringify(states, null, 2));
 		console.log("截图与状态目录:", OUT);
