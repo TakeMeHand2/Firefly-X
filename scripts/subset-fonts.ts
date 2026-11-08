@@ -8,7 +8,7 @@ import path from "node:path";
 import { glob } from "glob";
 import subsetFont from "subset-font";
 import { fontConfig, fontsList } from "../src/config";
-import { collectUsedFontCssVars, toPublicPath } from "../src/utils/fontHelper";
+import { collectUsedFontCssVars, toPublicPath } from "../src/utils/font-utils";
 import { resolveSiteRoot } from "./site-root";
 
 // ─── 配置 ───────────────────────────────────────────────

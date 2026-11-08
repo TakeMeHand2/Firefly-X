@@ -56,7 +56,7 @@ import { remarkMermaid } from "./src/plugins/remark-mermaid.js";
 import { remarkPlantuml } from "./src/plugins/remark-plantuml.js";
 import { remarkReadingTime } from "./src/plugins/remark-reading-time.mjs";
 import { remarkWikiLink } from "./src/plugins/remark-wiki-link.js";
-import { collectUsedFontCssVars } from "./src/utils/fontHelper";
+import { collectUsedFontCssVars } from "./src/utils/font-utils";
 
 if (process.env.NODE_ENV === "development") {
 	setMaxListeners(20);
