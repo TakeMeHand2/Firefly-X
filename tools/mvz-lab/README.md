@@ -25,7 +25,7 @@
 | `?fallOut` / `?fallIn` | 音频响应半径，缺省 0.71 / 0.36。 |
 | `?fadeIn` / `?fadeOut` | 发光淡出半径，缺省 0.48 / 0.89。 |
 | `?subTauUp` / `?subTauDn` | subBass 包络的攻击/释放时间常数，缺省 0.013 / 0.200 秒。 |
-| `?subFloor` | 谷值托底强度，缺省 **0.85**；`=0` 回退。用慢回落包络取 `max` 托住拍间低谷，不抬高拍点峰值（FINDINGS §15）。 |
+| `?subFloor` / `?subFloorCap` | 谷值托底强度与**绝对上限**，缺省 **1.0 / 0.50**。`max(bodyEnv, min(floor*strength, cap))`：拍间抬到 cap、拍点峰值由 bodyEnv 决定不被推高（FINDINGS §15–16）。`?subFloor=0` 关闭，`?subFloorCap=1` 退回 §15 方案。 |
 
 这些都是**调参旋钮**（与 `uGlow`/`uPeakAmt` 同类），不传参即缺省值，
 缺省档与历史构建逐字节一致。一次 `pnpm build` 即可跑完所有单变量 A/B，

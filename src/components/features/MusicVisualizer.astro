@@ -1066,6 +1066,9 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '    // 琥珀反降到 0.08%（更多柱子被抬亮 → 软压缩把暖色洗白），',
         '    // 另两帧也只有 0.23–0.38%。假设被证伪，回退到 0.70/0.96。',
         '    // 差距更可能来自构图（相机/柱阵密度）而非着色器参数，留待下轮。',
+        '    // 把托底只作用于染色门限的尝试（FINDINGS §16）已证伪并整段回退：',
+        '    // 按平面距离画的圆盘暖核会铺成橙色地毯，失去「高柱峰顶」语义。',
+        '    // 暖核本来就该与高度耦合；过冲改在包络侧用绝对上限解决。',
         '    float amberCore = smoothstep(0.70, 0.96, norm);',
         '    col += uPeak * amberCore * 0.30;',
         '  } else {',
@@ -2922,12 +2925,18 @@ const progressLabel = i18n(I18nKey.musicProgress);
     // 两条时间轴就此分叉——表现为「地形慢慢动，涟漪飞快跑」。
     var SIM_MAX = 10;
     var simAcc = 0;
-    // 谷值托底（FINDINGS §15）：慢回落包络只用来抬「拍间低谷」，
-    // 取 max 而不叠加，于是拍点峰值仍由 bodyEnv 决定、不被拉长 τdn 推高。
-    // 0.85 是暖核持续性复核后的实测最优（FINDINGS §15）：连续取帧零值帧
-    // 5/10→0/10、琥珀中位 0.26→0.89%，而拍点帧琥珀只从 1.07 到 1.45%
-    // （直接拉长 τdn 到 1.0 会推到 1.75%）。?subFloor=0 可一键回退。
-    var SUB_FLOOR = numParam('subFloor', 0.85, 0, 1);
+    // 谷值托底（FINDINGS §15）：慢回落包络只抬「拍间低谷」。
+    // §16 曾试过把托底只接到染色门限、与几何彻底解耦，结果暖核变成按平面
+    // 距离画的橙色圆盘（失去「高柱峰顶」语义），已证伪并整段回退。
+    // 这里改用**绝对上限**压 §15 方案的拍点过冲：托底量被 cap 削平后，
+    // 拍点帧 bodyEnv 高于 cap 时 max 必选 bodyEnv → 峰值回到基线；
+    // 拍间 bodyEnv 低于 cap 时 max 选 cap → 暖核仍在。
+    // 1.0 / 0.50 是 §16 双口径标定结果（两批 20 帧）：连续琥珀
+    // min/中位 0.55/1.06%（参照 0.68/1.02）、零值帧 0、集中度 0.68；
+    // 拍点锚帧琥珀 1.28%（§15 是 1.45%，无托底基线 1.07%）。
+    // ?subFloorCap=1 可退回 §15 方案，?subFloor=0 可完全关闭托底。
+    var SUB_FLOOR = numParam('subFloor', 1.0, 0, 1);
+    var SUB_FLOOR_CAP = numParam('subFloorCap', 0.50, 0, 1);
     var subFloorEnv = 0;
     var lastEnergy = { level: 0, pan: 0, width: 0 };
 
@@ -2946,7 +2955,7 @@ const progressLabel = i18n(I18nKey.musicProgress);
         }
         subFloorEnv = follow(subFloorEnv, rawBands[0], h, 0.010, 1.20);
         sm.subBass = SUB_FLOOR > 0
-            ? Math.max(bodyEnv[0], subFloorEnv * SUB_FLOOR)
+            ? Math.max(bodyEnv[0], Math.min(subFloorEnv * SUB_FLOOR, SUB_FLOOR_CAP))
             : bodyEnv[0];
         sm.bass = bodyEnv[1];
         sm.lowMid = bodyEnv[2];
