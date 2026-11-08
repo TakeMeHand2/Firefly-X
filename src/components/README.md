@@ -41,12 +41,9 @@ Firefly 项目中所有可复用组件的集中管理。组件按照功能和职
 - `ArchivePanel.astro` - 归档面板组件（服务端渲染 + 客户端筛选/折叠）
 
 **交互组件**
-- `DisplaySettings.svelte` - 显示设置组件
-- `DisplaySettingsIntegrated.svelte` - 集成显示设置组件
-- `LayoutSwitchButton.svelte` - 布局切换按钮
+- `DisplaySettingsIntegrated.svelte` - 集成显示设置面板（主题、版面、卡片边框、壁纸模式开关已合并至此）
 - `LightDarkSwitch.svelte` - 主题切换组件
 - `Search.svelte` - 搜索功能组件
-- `WallpaperSwitch.svelte` - 壁纸模式切换组件
 
 ### 🔧 common/ - 公共可复用组件
 
@@ -91,7 +88,6 @@ Firefly 项目中所有可复用组件的集中管理。组件按照功能和职
 - `SidebarTOC.astro` - 侧边栏目录组件
 - `SiteInfo.astro` - 站点信息组件
 - `SiteStats.astro` - 站点统计组件
-- `SpineModel.astro` - Spine 看板娘组件
 - `Tags.astro` - 标签组件
 
 ### ✨ features/ - 全局功能特效组件
