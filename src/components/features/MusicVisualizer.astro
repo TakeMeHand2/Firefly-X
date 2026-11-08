@@ -306,85 +306,64 @@ const progressLabel = i18n(I18nKey.musicProgress);
     var FIELD_OFF = /[?&]field=0\b/.test(QS);
 
     // ── 调色板 ───────────────────────────────────────────────
-    // 五段：bg 背景/淡出目标、core 主发光、edge 边缘暗档、rip 涟漪、peak 峰值
+    // 八段，逐项对齐 Wallpaper Engine《音域回响》(Sonic Topography) 的
+    // nocturnal「霁紫」主题（workshopid 3747222633，v15）。
+    // 数值取自其打包产物 assets/index--74e19pr.js 里的主题表，是运行时
+    // 直接喂给着色器的 uniform 值，不是取色器估的近似值：
+    //
+    //   bg       baseColor1  (0.005, 0.008, 0.025)  清屏 / 最深底
+    //   deep     baseColor2  (0.015, 0.025, 0.070)  体块基面 / 辉光暗端 / 雾
+    //   core     coolCore    (0.350, 0.100, 0.900)  主发光（冷）
+    //   edge     coolEdge    (0.150, 0.000, 0.450)  边缘暗档（冷）
+    //   warm     warmCore    (0.650, 0.250, 1.000)  中心暖端（品红紫）
+    //   warmEdge warmEdge    (0.500, 0.100, 0.800)  暖端暗档
+    //   rip      rippleColor (0.500, 0.200, 1.000)  波前
+    //   peak     peakColor   (1.000, 0.550, 0.050)  峰值强调（琥珀）
     //
     // 写入调用方给的 out 数组，不返回新数组：这个函数在主循环里每帧跑 5 次，
     // 每次分配 3 个 float 看着不多，但 60fps 下是每秒 300 个短命对象，
     // 会周期性触发 GC 抖动（表现为画面每隔几秒轻微一顿）。
-    function hsl2rgb(h, s, l, out) {
-        h = ((h % 360) + 360) % 360 / 360;
-        s = Math.max(0, Math.min(1, s));
-        l = Math.max(0, Math.min(1, l));
-        var r, g, b;
-        if (s === 0) {
-            r = g = b = l;
-        } else {
-            var q2 = l < 0.5 ? l * (1 + s) : l + s - l * s;
-            var p2 = 2 * l - q2;
-            var hue = function (t) {
-                if (t < 0) t += 1;
-                if (t > 1) t -= 1;
-                if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
-                if (t < 1 / 2) return q2;
-                if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
-                return p2;
-            };
-            r = hue(h + 1 / 3); g = hue(h); b = hue(h - 1 / 3);
-        }
-        if (out) {
-            out[0] = r; out[1] = g; out[2] = b;
-            return out;
-        }
-        return [r, g, b];
-    }
-
     function set3(dst, r, g, b) {
         dst[0] = r; dst[1] = g; dst[2] = b;
     }
 
     var pal = {
-        bg: [0.020, 0.022, 0.038],
-        core: [0.42, 0.18, 0.94],
-        edge: [0.17, 0.05, 0.44],
-        rip: [0.58, 0.32, 1.00],
-        peak: [1.00, 0.62, 0.14]
+        bg: [0.005, 0.008, 0.025],
+        deep: [0.015, 0.025, 0.070],
+        core: [0.350, 0.100, 0.900],
+        edge: [0.150, 0.000, 0.450],
+        warm: [0.650, 0.250, 1.000],
+        warmEdge: [0.500, 0.100, 0.800],
+        rip: [0.500, 0.200, 1.000],
+        peak: [1.000, 0.550, 0.050]
     };
     var palT = {
-        bg: [0.020, 0.022, 0.038],
-        core: [0.42, 0.18, 0.94],
-        edge: [0.17, 0.05, 0.44],
-        rip: [0.58, 0.32, 1.00],
-        peak: [1.00, 0.62, 0.14]
+        bg: [0.005, 0.008, 0.025],
+        deep: [0.015, 0.025, 0.070],
+        core: [0.350, 0.100, 0.900],
+        edge: [0.150, 0.000, 0.450],
+        warm: [0.650, 0.250, 1.000],
+        warmEdge: [0.500, 0.100, 0.800],
+        rip: [0.500, 0.200, 1.000],
+        peak: [1.000, 0.550, 0.050]
     };
 
-    // 音色偏移：低频占比高 → 色相往暖端推，亮度高 → 往冷端推。
-    // 壁纸是两套固定色板按 warmth 混合，这里换成单色相漂移，
-    // 好处是永远保持封面的辨识度，不会突然变成另一个主题。
-    var hueShift = 0;
-
-    // 纯计算，每帧调用不碰 DOM。写 CSS 变量会触发样式重算，
-    // 所以那一步单独拎出去，只在真正换曲/换色时做。
+    // 配色硬锁：不再读封面取色，也不吃 theme.accent。
+    // 之前 computePalette 用 mgr.getPalette() 的 h1/h2 推整套色相——
+    // 而 theme.accent (#e0365c) 会让 h1=h2=348°，整片地形变成玫红，
+    // peak 也跟着红，和壁纸的「紫罗兰 + 琥珀」完全对不上。
+    // 对齐壁纸的正确做法是场景色与品牌色解耦：场景只认 nocturnal 八角色，
+    // 封面只出现在卡片里。音色信息改走 uWarmth（空间暖度渐变）表达，
+    // 那正是壁纸自己的做法——色相不漂移，冷暖只改混合比例。
     function computePalette() {
-        var p = mgr.getPalette ? mgr.getPalette() : null;
-        if (p) {
-            // 冷底暖峰：地形主色用封面次色（对比色），中心峰用封面主色。
-            // 反过来做过一版，结果是肤色橙红被当成发光色，整片地形读成泥土。
-            // 暗场里只有高饱和的冷色能当"光"，暖色只能当"强调"。
-            var hCool = p.h2;
-            var hWarm = p.h1 + hueShift;
-            hsl2rgb(hCool * 0.18 + 246 * 0.82, 0.60, 0.022, palT.bg);
-            hsl2rgb(hCool, Math.max(0.62, p.s2 * 0.95), 0.28, palT.edge);
-            hsl2rgb(hCool, Math.max(0.70, p.s2), 0.56, palT.core);
-            hsl2rgb(hCool + 12, Math.max(0.76, p.s2), 0.68, palT.rip);
-            // 峰值亮度压在 0.60：再高一点中心就会洗成白色，高度差全丢
-            hsl2rgb(hWarm + 8, 0.55, 0.70, palT.peak);
-        } else {
-            set3(palT.bg, 0.020, 0.022, 0.038);
-            set3(palT.edge, 0.17, 0.05, 0.44);
-            set3(palT.core, 0.42, 0.18, 0.94);
-            set3(palT.rip, 0.58, 0.32, 1.00);
-            set3(palT.peak, 1.00, 0.62, 0.14);
-        }
+        set3(palT.bg, 0.005, 0.008, 0.025);
+        set3(palT.deep, 0.015, 0.025, 0.070);
+        set3(palT.core, 0.350, 0.100, 0.900);
+        set3(palT.edge, 0.150, 0.000, 0.450);
+        set3(palT.warm, 0.650, 0.250, 1.000);
+        set3(palT.warmEdge, 0.500, 0.100, 0.800);
+        set3(palT.rip, 0.500, 0.200, 1.000);
+        set3(palT.peak, 1.000, 0.550, 0.050);
     }
 
     // 背景色必须和 canvas 的 clearColor 完全一致，否则地形边缘会出现
@@ -464,20 +443,24 @@ const progressLabel = i18n(I18nKey.musicProgress);
         var k = 1 - Math.exp(-dt / PAL_TAU);
         if (k > 0.5) k = 0.5;          // 追帧时不要一步跳过去
         lerpPal(pal.bg, palT.bg, k);
+        lerpPal(pal.deep, palT.deep, k);
         lerpPal(pal.edge, palT.edge, k);
         lerpPal(pal.core, palT.core, k);
+        lerpPal(pal.warm, palT.warm, k);
+        lerpPal(pal.warmEdge, palT.warmEdge, k);
         lerpPal(pal.rip, palT.rip, k);
         lerpPal(pal.peak, palT.peak, k);
         updateExposure(dt);
     }
 
     // ── 曝光 ─────────────────────────────────────────────────
-    // 不同封面的峰值亮度能差三倍：白底插画当封面时中心峰直接顶到纯白，
-    // 高度差全丢；深色封面又整片压在黑里。按调色板的加权亮度反推一个
-    // 曝光系数，让「高光的相对层次」在换曲之后仍然成立。
-    // 参考点取缺省调色板的峰值亮度，于是缺省配色下曝光恰好是 1.0。
+    // 配色硬锁之后，「不同封面的峰值亮度差三倍」这个前提不复存在，
+    // 但机制留着：参考点 EXPO_REF 取 nocturnal 调色板自身的加权亮度
+    // (peak 0.610 × 0.65 + core 0.211 × 0.35 = 0.470)，
+    // 于是这套配色下曝光恒等于 1.0。将来若重新放开封面取色，
+    // 只需重算参考点，曲线不用动。
     var exposureAmt = 1;
-    var EXPO_REF = 0.666;
+    var EXPO_REF = 0.470;
     function updateExposure(dt) {
         var lp = 0.2126 * pal.peak[0] + 0.7152 * pal.peak[1] + 0.0722 * pal.peak[2];
         var lc = 0.2126 * pal.core[0] + 0.7152 * pal.core[1] + 0.0722 * pal.core[2];
@@ -683,7 +666,11 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '  float seed = aInst.z;',
         '  float dist = length(p);',
         '',
-        '  float falloff = smoothstep(uHalf * 0.60 * uRange, uHalf * 0.30 * uRange, dist);',
+        // 0.71/0.36 对齐壁纸的 globalFalloff（smoothstep(0.71H, 0.36H, d)）：
+        // 原先 0.60/0.30 把音频响应圈在一个更小的核里——同样幅值的鼓点，
+        // 壁纸能推到 60 单位外，这里 50 单位就没了。半径 +20%、面积 +44%，
+        // 「整片地面跟着音乐动」的感觉一半来自这条曲线，另一半才来自幅值。
+        '  float falloff = smoothstep(uHalf * 0.71 * uRange, uHalf * 0.36 * uRange, dist);',
         '',
         '  // ── 底噪：两路同族噪声拼出「海面」，静音时场景也不死 ──',
         '  float n1 = snoise(p * 0.055 + vec2(uTime * 0.11, uTime * 0.045));',
@@ -870,10 +857,14 @@ const progressLabel = i18n(I18nKey.musicProgress);
         'varying float vDepth;',
         '',
         'uniform vec3 uBg;',
+        'uniform vec3 uDeep;',
         'uniform vec3 uCore;',
         'uniform vec3 uEdge;',
+        'uniform vec3 uWarm;',
+        'uniform vec3 uWarmEdge;',
         'uniform vec3 uRip;',
         'uniform vec3 uPeak;',
+        'uniform float uWarmth;',
         'uniform float uGlow;',
         'uniform float uPeakAmt;',
         'uniform float uSharp;',
@@ -902,26 +893,44 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '  float ripFreq = vD.z;',
         '  float tail = vD.w;',
         '',
-        '  // 高度→亮度是这张图的语法，但原来的除法（/16 配 smoothstep 0.07–0.40）',
-        '  // 在 6.4 个单位处就吃满了：地形中段以上全部同亮，高度差只剩轮廓可读。',
-        '  // 方位扇区抬起的脊正好落在那段「已经不再变亮」的高度里，于是怎么加',
-        '  // 幅值都看不见。把量程推到 22 / 0.05–0.60（≈13 个单位才饱和）之后，',
-        '  // 5–15 这个真实区间才重新变成一段可辨识的明暗梯度。',
-        '  float norm = clamp(elevation / 19.0, 0.0, 1.0);',
-        '  float lift = smoothstep(0.06, 0.50, norm);',
-        '  float distFade = 1.0 - smoothstep(uHalf * 0.62, uHalf * 1.02, dist);',
+        '  // 高度→亮度：对齐《音域回响》的两段式传递。',
+        '  // 壁纸 currentGlow = mix(base2, target, elev/8)——颜色随高度线性上升；',
+        '  // 顶面再叠 smoothstep(0, 0.4) 的快斜坡，≈3.2 个单位到全亮。',
+        '  // 原先这里是 smoothstep(0.06, 0.50, elev/19)：elev=2 时输出 0.026，',
+        '  // 壁纸同高度 ≈0.17——中低段暗一个数量级。这不是柱子不够高，',
+        '  // 是 2–5 个单位的高度差在亮度上读不出来，「起伏幅度不足」的主因。',
+        '  // 量程 8.5（壁纸 8.0，留半单位余量给叠满的频段）。历史上曾把量程',
+        '  // 推到 19/22 来救「5–15 全同亮」的问题——那时真正的病灶是上游频段',
+        '  // 被 tilt 削顶（见 mvz-lab FINDINGS §1.2），不是量程本身。',
+        '  float norm = clamp(elevation / 8.5, 0.0, 1.0);',
+        '  float lift = smoothstep(0.0, 0.42, norm);',
+        '  float distFade = 1.0 - smoothstep(uHalf * 0.48, uHalf * 0.89, dist);',
         '',
+        '  // 空间暖度：壁纸的 warmBlend——音色越暖、离岛心越近，色相越往',
+        '  // 品红紫偏，外围回落冷紫。这是那张图「中心透、边缘沉」的来源，',
+        '  // 也接住了原先「色相漂移」想表达的音色信息：色相不漂，只改配比。',
+        '  // 系数不能照抄壁纸的 1.5：本端 warmth = 低四段/总八段，fourfloor',
+        '  // 实测恒在 0.66–0.93（静音 0.5），而壁纸用的是归一化音色量。',
+        '  // 1.5×0.7≈1.05 已把 (0.5 - dist/0.95H) 这项彻底淹没，warmBlend',
+        '  // 全岛≈1 → 每根柱子都取 uWarm/uWarmEdge：整片品红、整体过亮，',
+        '  // 冷紫层次消失（拍点实测色相集中度 0.88–0.96，壁纸 0.62；',
+        '  // 亮区占比 63.5% 对 38.7%）。收到 0.55 后岛心≈1、0.48H 处≈0.4、',
+        '  // 外缘≈0，梯度重新成立；uCore 比 uWarm 暗约 40%，顺带压回曝光。',
+        '  float warmBlend = smoothstep(0.0, 1.0, uWarmth * 0.55 + (0.5 - dist / (uHalf * 0.95)));',
+        '  vec3 zoneCore = mix(uCore, uWarm, warmBlend);',
+        '  vec3 zoneEdge = mix(uEdge, uWarmEdge, warmBlend);',
         '  // 发光色：核心与边缘之间按柱子随机值抖动，避免整片同色',
-        '  vec3 glow = mix(uCore, uEdge, fract(seed * 11.0));',
-        '  glow = mix(glow * 0.30, glow, lift) * distFade;',
+        '  vec3 glow = mix(zoneCore, zoneEdge, fract(seed * 11.0));',
+        '  glow = mix(uDeep, glow, norm) * uGlow * distFade;',
         '',
         '  float normalBlend = ripN * ripN;',
         '  float whiteBlend = ripW * ripW;',
         '',
-        '  // 波前的颜色带上频率：低频取封面主色（暖）、高频取次色（冷）。',
-        '  // 依据是空气吸收把高频先磨掉——远处只剩下暖色的低频，于是「距离」',
-        '  // 这件事第一次有了音色，而不只是亮度。',
-        '  vec3 ripCol = mix(uPeak, uRip, clamp(0.42 + ripFreq * 0.85, 0.0, 1.0));',
+        '  // 波前的颜色带上频率：低频偏暖端（品红紫）、高频回冷紫。',
+        '  // 依据仍是空气吸收把高频先磨掉——远处只剩低频，于是「距离」',
+        '  // 第一次有了音色。原先低频端直接取 uPeak（琥珀），会把整个冷调',
+        '  // 场子里掺进一条橙——壁纸的波前是纯紫的，琥珀只属于峰顶。',
+        '  vec3 ripCol = mix(uWarm, uRip, clamp(0.35 + ripFreq, 0.0, 1.0));',
         '  glow = mix(glow, ripCol, normalBlend * 0.62);',
         '  glow += vec3(1.0) * whiteBlend * 0.34;',
         '',
@@ -930,10 +939,15 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '  // —— 扇区必须只在「确实被抬起来的那道脊」上着色。',
         '  glow = mix(glow, ripCol, clamp(spatial * 0.20, 0.0, 0.20) * lift);',
         '',
+        '  // 峰顶强调：线性混合在这里只作「底盘染色」。紫与琥珀按任意比例',
+        '  // 相混都落在品红/粉白，永远到不了琥珀的 30° 色相——提高权重也',
+        '  // 没用（0.70 与 0.92 两版实测琥珀像素都≈0，参照图 1.02%）。',
+        '  // 签名色必须由顶面末尾的加法发光给出：光是加出来的，才能压住',
+        '  // 周围紫场与宽模糊辉光。',
         '  float peakBlend = pow(peakRaw, 0.85) * uPeakAmt;',
-        '  glow = mix(glow, uPeak, clamp(peakBlend, 0.0, 1.0) * 0.24);',
+        '  glow = mix(glow, uPeak, clamp(peakBlend, 0.0, 1.0) * 0.70);',
         '',
-        '  vec3 body = (uBg * 1.15 + uCore * 0.06 * relY * lift * distFade) * mix(0.45, 1.0, relY);',
+        '  vec3 body = mix(uBg, uDeep, relY * distFade) * mix(0.45, 1.0, relY);',
         '  vec3 col;',
         '',
         '  if (nrm.y > 0.5) {',
@@ -948,12 +962,12 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '    }',
         '',
         '    // 上限 1.05 而不是外推：密集柱阵里一旦过曝，中心就会糊成一片白，',
-        '    // 高度差反而读不出来',
-        '    // 中低段再压一道 gamma：底座那 1–3 个单位的高度差原本落在',
-        '    // smoothstep 的线性段里，与真正的高柱只差一点亮度，整片读成',
-        '    // 「同高的地毯」。压完中低段，峰与坡才分得开。',
-        '    float topLit = pow(clamp(top, 0.0, 1.05), 1.14) * 1.05;',
-        '    col = mix(uBg * 0.92, glow * 1.16, clamp(topLit, 0.0, 1.05));',
+        '    // 高度差反而读不出来。',
+        '    // gamma 1.14 已删：它服务的是旧的慢斜坡（把中低段压暗来分离',
+        '    // 峰与坡），现在斜坡本身对齐了壁纸的 smoothstep(0, 0.42)，',
+        '    // 再压一道 gamma 等于把刚抬起来的中低段再按回去。',
+        '    float topLit = clamp(top, 0.0, 1.05);',
+        '    col = mix(uDeep * 0.92, glow * 1.16, topLit);',
         '',
         '    // 顶面四边勾亮：密集柱阵里，这一笔决定了能不能读出「面」',
         '    float ex = smoothstep(0.05, 0.01, uv.x) + smoothstep(0.95, 0.99, uv.x);',
@@ -986,6 +1000,20 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '    if (fract(seed * 89.0) > 0.992 && briPhase > 0.78) {',
         '      col += uPeak * uBrill * 1.3 * twinkle * briPhase * briSpot;',
         '    }',
+        '',
+        '    // 琥珀核：参照图最显眼的签名色，只给真正最高的那批顶面加一档暖光。',
+        '    // 门控用 norm（真实柱高）而不是 peakRaw——后者在中心 0.32H 内是',
+        '    // 一道连续坡，会把坡面一起染成粉；norm 只挑出肉眼看到的那簇峰。',
+        '    // 放在顶面分支末尾，是为了不再被白波前、勾边与紫辉光洗掉。',
+        '    // 0.52 一版实测：强拍帧 mean 0.182 / P90 0.495（参照 0.093/0.248），',
+        '    // 琥珀是出来了但整片被抬亮。收到 0.30 并把门限推高，只留峰尖。',
+        '    // 曾假设 4 倍琥珀差距在「范围」而非「强度」，把门限下移到',
+        '    // 0.52/0.82 试过一版：强拍帧 mean 0.134 / P90 0.373 过曝，',
+        '    // 琥珀反降到 0.08%（更多柱子被抬亮 → 软压缩把暖色洗白），',
+        '    // 另两帧也只有 0.23–0.38%。假设被证伪，回退到 0.70/0.96。',
+        '    // 差距更可能来自构图（相机/柱阵密度）而非着色器参数，留待下轮。',
+        '    float amberCore = smoothstep(0.70, 0.96, norm);',
+        '    col += uPeak * amberCore * 0.30;',
         '  } else {',
         '    // 侧面：平滑的音乐拉长辉光，尖锐的音乐把光锁在顶端',
         '    float vFall = mix(1.0, 3.0, uSharp);',
@@ -1009,15 +1037,18 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '  // 而 uPan 的符号已经按相机右向量投影过——镜头转向时「左右」才跟着换。',
         '  col *= 1.0 + uPan * panX;',
         '',
-        '  // 节拍冲击：低频每次落点给全场一次极短的提亮，',
-        '  // 这是「节奏感」最直接的来源——比让柱子长高更快被感知',
-        '  col *= 1.0 + uPunch * 0.42;',
+        '  // 节拍冲击：给「有光的柱子」加一档短促的辉光，而不是全画面乘法。',
+        '  // 乘法在 col≈0 的区域是恒等操作——mvz-lab 实测 2Hz 脉冲只让亮区',
+        '  // P90 动 0.086，「节拍冲击在像素层面几乎不成立」（FINDINGS §1.4）。',
+        '  // 改成对 glow 的加法：光落在已经亮的地方，黑的地方仍然黑，',
+        '  // 拍点于是读得出来，也不会把底座一起抬成灰雾。',
+        '  col += glow * uPunch * 0.32;',
         '',
         '  // 空气透视 + 边缘溶解：地形没有边界，只有「看不见为止」',
         '  // 大气透视按视距，边缘溶解按平面距离——两者不能混用：',
         '  // 前者决定「远近」，后者决定「离岛心多远」',
         '  float haze = smoothstep(uHalf * 0.55, uHalf * 1.45, vDepth);',
-        '  col = mix(col, uBg * 2.1, haze * 0.62);',
+        '  col = mix(col, uDeep * 1.6, haze * 0.62);',
         '',
         '  // 只有「被抬起来的部分」留在画面上。柱阵的底座在掠射角下会连成',
         '  // 一张带缝隙的网格地板——格子是柱顶、黑线是缝——那是最容易让',
@@ -1230,7 +1261,8 @@ const progressLabel = i18n(I18nKey.musicProgress);
             'uEnergy', 'uSubBass', 'uBass', 'uLowMid', 'uMid', 'uHighMid',
             'uCentral', 'uRing', 'uFlow', 'uRiver', 'uSpike',
             'uRipA', 'uRipB', 'uField', 'uCamPos', 'uSpatial', 'uTail', 'uMirror',
-            'uBg', 'uCore', 'uEdge', 'uRip', 'uPeak', 'uGlow', 'uPeakAmt',
+            'uBg', 'uDeep', 'uCore', 'uEdge', 'uWarm', 'uWarmEdge', 'uRip', 'uPeak',
+            'uWarmth', 'uGlow', 'uPeakAmt',
             'uSharp', 'uAir', 'uBrill', 'uPres', 'uPunch', 'uPan'];
         // 数组 uniform 的位置查询有坑：规范允许用「uField」这种基名去查，
         // 等价于 uField[0]，但 ANGLE / SwiftShader 上实测会返回 null，
@@ -1481,7 +1513,10 @@ const progressLabel = i18n(I18nKey.musicProgress);
         // 这条曲线保留 0..1 的层次，把 1 以上压回去。
         '  col = col / (1.0 + col * 0.34);',
         '  float air = exp(-length((vUv - vec2(0.5, 0.34)) * vec2(1.55, 1.0)) * 2.4);',
-        '  col += uBg * 3.2 * air;',
+        // 空气辉光：uBg 硬锁成 baseColor1（≈#010206）后比原先暗 4 倍，
+        // 系数 3.2→5.0 校回同一档视觉强度——上半屏那层「被照亮的空气」
+        // 对应壁纸画面里的远场地平线（约 #0A0D1A 的藏青）。
+        '  col += uBg * 5.0 * air;',
         // 调色：加法混合 + 宽模糊辉光会把饱和度往下拉——三层叠加后，
         // 只要有一个通道先顶到上限，整片就被读成灰。补回一档，放在暗角之前：
         // 暗角是乘性的，先补色再压暗，暗部才不会既暗又灰。这一步也是
@@ -2514,6 +2549,7 @@ const progressLabel = i18n(I18nKey.musicProgress);
                 bands: [sm.subBass, sm.bass, sm.lowMid, sm.mid,
                     sm.highMid, sm.presence, sm.brill, sm.air],
                 energy: sm.energy, idle: sm.idle, centroid: sm.centroid,
+                warmth: sm.warmth, brightness: sm.brightness,
                 density: sm.density, punch: punch, beatPulse: beatPulse,
                 spatial: spatialAmt, tail: tailAmt,
                 cam: { dist: cam.dist, x: camPos[0], y: camPos[1], z: camPos[2] },
@@ -2734,8 +2770,11 @@ const progressLabel = i18n(I18nKey.musicProgress);
         computePalette();
         for (var pi = 0; pi < 3; pi++) {
             pal.bg[pi] = palT.bg[pi];
+            pal.deep[pi] = palT.deep[pi];
             pal.edge[pi] = palT.edge[pi];
             pal.core[pi] = palT.core[pi];
+            pal.warm[pi] = palT.warm[pi];
+            pal.warmEdge[pi] = palT.warmEdge[pi];
             pal.rip[pi] = palT.rip[pi];
             pal.peak[pi] = palT.peak[pi];
         }
@@ -2753,7 +2792,6 @@ const progressLabel = i18n(I18nKey.musicProgress);
     var lastCur = '';
     var lastDur = '';
     var lastPlaying = null;
-    var hueShiftAccum = 0;
 
     if (window.matchMedia) {
         var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -2881,12 +2919,7 @@ const progressLabel = i18n(I18nKey.musicProgress);
         var idleTarget = (playing && sm.energy > 0.05) ? 0.16 : 1.0;
         sm.idle = follow(sm.idle, idleTarget, h, 0.6, 0.9);
 
-        // ③ 色相漂移：暖音乐往橙推，亮音乐往青推
-        var hueShiftT = sm.warmth * 12 - sm.brightness * 10;
-        hueShiftAccum = follow(hueShiftAccum, hueShiftT, h, 0.35, 0.35);
-        hueShift = hueShiftAccum;
-
-        // ④ 拍相与脉冲
+        // ③ 拍相与脉冲
         if (beatBpm > 0 && playing) {
             // 速度可信时用锁相环推进；相位跨越 0 就是「拍点到了」
             var prevPhase = beatPhase;
@@ -2904,11 +2937,11 @@ const progressLabel = i18n(I18nKey.musicProgress);
         beatPulse *= Math.exp(-h / 0.115);
         if (beatPulse < 0.001) beatPulse = 0;
 
-        // ⑤ 节拍冲击衰减（触发在帧里，衰减在积分里）
+        // ④ 节拍冲击衰减（触发在帧里，衰减在积分里）
         punch *= Math.exp(-h / 0.135);
         if (punch < 0.001) punch = 0;
 
-        // ⑥ 相机：临界阻尼弹簧而不是一阶低通
+        // ⑤ 相机：临界阻尼弹簧而不是一阶低通
         // 一阶低通在指针快速移动时表现为「匀速跟随、突然停住」；
         // 带速度状态的弹簧会先加速、到位后轻微减速，手感更接近真实云台。
         var w = 5.65;                     // ω = 2π·0.9Hz
@@ -2919,7 +2952,7 @@ const progressLabel = i18n(I18nKey.musicProgress);
         cam.svy += ay * h;
         cam.sy += cam.svy * h;
 
-        // ⑦ 方位场（含立体声 pan/width）
+        // ⑥ 方位场（含立体声 pan/width）
         updateField(h, camRight[0], lastEnergy.pan || 0, lastEnergy.width || 0);
     }
 
@@ -3116,10 +3149,14 @@ const progressLabel = i18n(I18nKey.musicProgress);
 
             set3f('uBg', pal.bg);
             set3f('uCamPos', camPos);
+            set3f('uDeep', pal.deep);
             set3f('uCore', pal.core);
             set3f('uEdge', pal.edge);
+            set3f('uWarm', pal.warm);
+            set3f('uWarmEdge', pal.warmEdge);
             set3f('uRip', pal.rip);
             set3f('uPeak', pal.peak);
+            set1f('uWarmth', sm.warmth);
             set1f('uGlow', 1.0);
             set1f('uPeakAmt', 0.88);
             set1f('uSharp', sm.sharpness);
@@ -3142,7 +3179,9 @@ const progressLabel = i18n(I18nKey.musicProgress);
             if (mCount > 0 && meteorProg) {
                 gl.useProgram(meteorProg);
                 gl.uniformMatrix4fv(meteorUni.uMVP, false, vp);
-                gl.uniform3f(meteorUni.uColor, 1.0, 0.94, 0.78);
+                // 流星是纯白：壁纸的流星波纹落到地面才点亮地形，
+                // 光尾本身不带暖色——琥珀留给峰顶，紫色留给地形。
+                gl.uniform3f(meteorUni.uColor, 1.0, 1.0, 1.0);
                 gl.bindBuffer(gl.ARRAY_BUFFER, meteorBuf);
                 gl.bufferData(gl.ARRAY_BUFFER, meteorVerts.subarray(0, mCount * 4), gl.DYNAMIC_DRAW);
                 bindMeteorAttribs();

@@ -8,12 +8,17 @@ export const musicPlayerConfig: MusicPlayerConfig = {
 	// 是否在侧边栏显示音乐播放器组件
 	showInSidebar: true,
 
-	// 固定配色：不再对歌曲封面取色，全站只用一个状态色。
-	// accent 决定侧边栏强调色 + 全屏地形的色相；
+	// 固定配色：不再对歌曲封面取色。
+	// accent 只决定侧边栏迷你播放器的强调色；全屏可视化场景的配色
+	// 已与 Wallpaper Engine《音域回响》(nocturnal/霁紫) 硬锁一致，
+	// 不再吃这里的任何颜色。
 	// fullscreenAccent / fullscreenGlass 只作用于全屏卡片，与场景配色解耦。
+	// fullscreenAccent 取场景 coolCore (#591ae6, 色相 259°) 的提亮版
+	// #b8a6ff（252°）：卡片的描边/圆环/图标色与地形同属一个紫族，
+	// 避免出现「紫色地形上浮着一块蓝色控制台」的割裂感。
 	theme: {
 		accent: "#e0365c",
-		fullscreenAccent: "#86a9ff",
+		fullscreenAccent: "#b8a6ff",
 		fullscreenGlass: "#0a0b11",
 	},
 

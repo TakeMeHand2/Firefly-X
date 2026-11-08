@@ -70,6 +70,26 @@
 | 闪烁 | 相邻明暗对 ΔL ≥ 0.10（WCAG 2.3.1） |
 | 可复现 | 预热 1.5 s 后逐帧哈希相同 |
 
+## 取景与配色核验（三个独立脚本）
+
+不产出「有没有跟着音乐动」的数字，产出「长什么样」的对照帧。都需要 `pnpm build`
+后的 `dist`（`beat-peek` / `ref-capture` 各自起一个本地静态服务器 + CDP Chrome）。
+
+| 脚本 | 作用 |
+|---|---|
+| `ref-capture.mjs` | 给《音域回响》壁纸注 `wallpaperRegisterAudioListener` 等 WE 宿主 API shim，喂 128 BPM 合成频谱，让参照本体在 headless Chrome 里真跑。`preview.gif` 只有空闲段，不能用来比峰顶色。shim 暴露 `__beat.phase/peaks`，**在跨拍后 1 帧截图**，`--shots` 多帧取样 + `states.json`；`--secs` 是热身秒数。 |
+| `beat-peek.mjs` | **在拍点峰值截图**，而不是场景收尾帧——四踩收尾帧多半落在拍间低谷，峰顶色本来就不该出现。写 `beat-N.png` + `states.json`。`--fixed 1` 透传 1/60 固定步长时钟；每次自动用全新 `--user-data-dir`（复用崩溃过的 profile 会 `Abnormal renderer termination`）。 |
+| `colorcheck.py` | 截图 → 亮度分位、亮/暗区均色、色相圆周平均与集中度、色族像素数。纯标准库 + ffmpeg。判据是色相族（暖峰 12–70°、紫族 240–315°），不要用「距 peakColor 的 RGB 距离」——经辉光与软压缩后峰顶是蜜桃色，会双双漏判。`--mask x0,y0,x1,y1` 可整块剔除播放器卡片区做敏感性检验（**两端必须用同一矩形**）。 |
+
+配色结论与测量表见 `FINDINGS.md` 第十一、十二节。关于可复现性，
+`--fixed` 固定的是**内部积分步长**，不固定 CDP 截图的落帧：多批次间前两帧
+可逐字节一致，第三帧可能落在相邻拍。跨运行比较请取**多帧统计范围**，
+不要逐帧比对，也不要据单帧下结论。
+
+参照端在 SwiftShader 下只有 2.5–3.2 fps（降分辨率也无明显改善），
+拍点相位只代表**输入信号**，不代表画面响应峰值；因此参照的绝对亮度
+只作量级参考，正式对照用比率类量（琥珀面积、色相集中度、暗区均色）。
+
 ## 已知限制
 
 - headless + SwiftShader：能跑通渲染与像素回读，但 GPU 计时无意义（软光栅）。

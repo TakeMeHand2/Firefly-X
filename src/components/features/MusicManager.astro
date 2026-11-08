@@ -201,8 +201,9 @@ const managerConfigStr = JSON.stringify({
     }
 
     if (fixedAccent) {
-        // 单色相：地形与峰值共用同一色相，只靠明度/饱和度分层，
-        // 这样「音频响应」只体现在能量上，不再带任何封面的色彩倾向。
+        // lastPalette 曾是全屏地形配色的来源；地形配色已与《音域回响》
+        // nocturnal 硬锁（见 MusicVisualizer.astro 调色板段），不再消费它。
+        // 这里仍构造一份，供侧边栏迷你播放器等潜在消费方使用。
         lastPalette = {
             h1: fixedAccent.h,
             s1: clampNum(fixedAccent.s, 0.45, 0.92),
