@@ -17,6 +17,13 @@
 | `?live=1` | 保留 `mvz=1` 的自动开层，但频谱走真实分析器。整条真实链路。 |
 | `?q=0..3` | 强制画质档（超/高/中/低）。一档同时改网格密度、渲染倍率、像素预算、辉光降采样、镜像反射——只改网格是假自适应。 |
 | `?field=0` | 关掉方位声场，回到纯地形基线。改空间场参数时的对照组。 |
+| `?punchGain=0..1` | 节拍冲击加法项的系数，缺省 0.32。`=0` 即单变量关掉它。 |
+| `?tailGain=0..1` | 混响尾加法项的系数，缺省 0.34。`=0` 即单变量关掉它。 |
+| `?liftEnd=0..1` | 高度→亮度斜坡的饱和点，缺省 **0.75**；`=0.42` 退回「严格对齐壁纸曲线」的基线。 |
+
+后三个是**调参旋钮**（与 `uGlow`/`uPeakAmt` 同类），不传参即缺省值，
+缺省档与历史构建逐字节一致。一次 `pnpm build` 即可跑完所有单变量 A/B，
+不必为每个候选值重建。用 `--qs` 从 `beat-peek.mjs` 透传。
 
 `?rm=0` 覆盖 `prefers-reduced-motion`（headless 默认报 reduce，不覆盖的话每张图都跑在降级分支上）。
 
@@ -78,7 +85,7 @@
 | 脚本 | 作用 |
 |---|---|
 | `ref-capture.mjs` | 给《音域回响》壁纸注 `wallpaperRegisterAudioListener` 等 WE 宿主 API shim，喂 128 BPM 合成频谱，让参照本体在 headless Chrome 里真跑。`preview.gif` 只有空闲段，不能用来比峰顶色。shim 暴露 `__beat.phase/peaks`，**在跨拍后 1 帧截图**，`--shots` 多帧取样 + `states.json`；`--secs` 是热身秒数。 |
-| `beat-peek.mjs` | **在拍点峰值截图**，而不是场景收尾帧——四踩收尾帧多半落在拍间低谷，峰顶色本来就不该出现。写 `beat-N.png` + `states.json`。`--fixed 1` 透传 1/60 固定步长时钟；每次自动用全新 `--user-data-dir`（复用崩溃过的 profile 会 `Abnormal renderer termination`）。 |
+| `beat-peek.mjs` | **在拍点峰值截图**，而不是场景收尾帧——四踩收尾帧多半落在拍间低谷，峰顶色本来就不该出现。写 `beat-N.png` + `states.json`。`--fixed 1` 透传 1/60 固定步长时钟；`--min-sub` / `--min-punch` 收紧强拍判据，`--patience` 放宽轮询上限（强拍稀疏时要加大），`--qs` 透传任意调试旋钮；每次自动用全新 `--user-data-dir`（复用崩溃过的 profile 会 `Abnormal renderer termination`）。 |
 | `colorcheck.py` | 截图 → 亮度分位、亮/暗区均色、色相圆周平均与集中度、色族像素数。纯标准库 + ffmpeg。判据是色相族（暖峰 12–70°、紫族 240–315°），不要用「距 peakColor 的 RGB 距离」——经辉光与软压缩后峰顶是蜜桃色，会双双漏判。`--mask x0,y0,x1,y1` 可整块剔除播放器卡片区做敏感性检验（**两端必须用同一矩形**）。 |
 
 配色结论与测量表见 `FINDINGS.md` 第十一、十二节。关于可复现性，

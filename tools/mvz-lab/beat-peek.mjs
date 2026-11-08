@@ -24,6 +24,14 @@ const GRID = arg("grid", "96");
 const W = Number(arg("w", "1280"));
 const H = Number(arg("h", "720"));
 const SHOTS = Number(arg("shots", "3"));
+// 强拍取景判据：默认沿用历史宽松阈值；--min-sub / --min-punch 可收紧，
+// 专门抓「过曝的那一拍」，避免不同批次落在强弱不同的拍上。
+const MIN_SUB = Number(arg("min-sub", "0.25"));
+const MIN_PUNCH = Number(arg("min-punch", "0"));
+// 收紧判据后强拍更稀疏，需放宽轮询上限（每次 120ms，默认 200=24s）。
+const PATIENCE = Number(arg("patience", "200"));
+// 透传任意额外查询串，如 --qs "punchGain=0&tailGain=0"（单变量 A/B）。
+const EXTRA_QS = arg("qs", "");
 // --fixed 打开 1/60 固定步长时钟，同一构建两次运行可逐帧对齐；
 // 默认关闭，与历史截图保持同一取景条件。
 const FIXED = arg("fixed", "0") !== "0";
@@ -130,7 +138,9 @@ async function evl(cdp, expression) {
 			features: [{ name: "prefers-reduced-motion", value: "no-preference" }]
 		});
 		const url = `http://127.0.0.1:${SERVE_PORT}/?mvz=1&rm=0&seed=7&grid=${GRID}` +
-			`&stim=${encodeURIComponent(STIM)}${FIXED ? "&fixed=1" : ""}`;
+			`&stim=${encodeURIComponent(STIM)}${FIXED ? "&fixed=1" : ""}` +
+			(EXTRA_QS ? `&${EXTRA_QS}` : "");
+		console.log("URL:", url);
 		await cdp.send("Page.navigate", { url });
 
 		// 等地形真的在动
@@ -144,11 +154,12 @@ async function evl(cdp, expression) {
 		for (let s = 0; s < SHOTS; s++) {
 			// 等到一次拍点峰值
 			let st = null;
-			for (let i = 0; i < 200; i++) {
+			for (let i = 0; i < PATIENCE; i++) {
 				st = await evl(cdp,
 					"(()=>{const p=window.__mvzProbe;return p?{s:p.state(),b:p.beat()}:null})()"
 				).catch(() => null);
-				if (st && st.b.pulse > 0.5 && st.s.bands[0] > 0.25) break;
+				if (st && st.b.pulse > 0.5 && st.s.bands[0] > MIN_SUB &&
+					st.s.punch > MIN_PUNCH) break;
 				await sleep(120);
 			}
 			const shot = await cdp.send("Page.captureScreenshot", { format: "png" });

@@ -305,6 +305,21 @@ const progressLabel = i18n(I18nKey.musicProgress);
     // 退回基线——否则「这段画面好看了」永远说不清是谁的功劳。
     var FIELD_OFF = /[?&]field=0\b/.test(QS);
 
+    // 强拍过曝归因用的单变量旋钮：?punchGain=0 / ?tailGain=0 可分别关掉
+    // 两条加法项，其余一律不动。不传参时取缺省值，与历史行为逐字节一致。
+    // 与 uGlow/uPeakAmt 一样，是刻意保留的调参旋钮，不是产品功能。
+    function gainParam(name, fallback) {
+        var m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(QS);
+        if (!m) return fallback;
+        var v = parseFloat(m[1]);
+        return isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback;
+    }
+    var PUNCH_GAIN = gainParam('punchGain', 0.32);
+    var TAIL_GAIN = gainParam('tailGain', 0.34);
+    // 高度→亮度斜坡的饱和点。0.75 是强拍过曝复核后的实测最优
+    // （FINDINGS §13）；?liftEnd=0.42 可一键退回「严格对齐壁纸曲线」的基线。
+    var LIFT_END = gainParam('liftEnd', 0.75);
+
     // ── 调色板 ───────────────────────────────────────────────
     // 八段，逐项对齐 Wallpaper Engine《音域回响》(Sonic Topography) 的
     // nocturnal「霁紫」主题（workshopid 3747222633，v15）。
@@ -875,6 +890,9 @@ const progressLabel = i18n(I18nKey.musicProgress);
         'uniform float uHalf;',
         'uniform float uPunch;',
         'uniform float uPan;',
+        'uniform float uPunchGain;',
+        'uniform float uTailGain;',
+        'uniform float uLiftEnd;',
         '',
         'float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123); }',
         '',
@@ -893,17 +911,18 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '  float ripFreq = vD.z;',
         '  float tail = vD.w;',
         '',
-        '  // 高度→亮度：对齐《音域回响》的两段式传递。',
-        '  // 壁纸 currentGlow = mix(base2, target, elev/8)——颜色随高度线性上升；',
-        '  // 顶面再叠 smoothstep(0, 0.4) 的快斜坡，≈3.2 个单位到全亮。',
-        '  // 原先这里是 smoothstep(0.06, 0.50, elev/19)：elev=2 时输出 0.026，',
-        '  // 壁纸同高度 ≈0.17——中低段暗一个数量级。这不是柱子不够高，',
-        '  // 是 2–5 个单位的高度差在亮度上读不出来，「起伏幅度不足」的主因。',
-        '  // 量程 8.5（壁纸 8.0，留半单位余量给叠满的频段）。历史上曾把量程',
-        '  // 推到 19/22 来救「5–15 全同亮」的问题——那时真正的病灶是上游频段',
-        '  // 被 tilt 削顶（见 mvz-lab FINDINGS §1.2），不是量程本身。',
+        '  // 高度→亮度。量程 8.5 对应壁纸的 elev/8（留半单位余量给叠满频段）。',
+        '  // 顶面斜坡的饱和点 uLiftEnd 默认 0.75，而非壁纸语义上的 0.42：',
+        '  // 壁纸 currentGlow 线性到 elev/8、顶面再叠 fast smoothstep(0,0.4)，',
+        '  // 但本端柱阵 96×96、falloff 更宽、相机更近，同样的高度分布下',
+        '  // 0.42 会让强拍有大片柱子同时饱和成「发亮的网格地毯」。',
+        '  // 这是用传递曲线补偿构图差异（治标，非根治）：两批 × 8 帧实测',
+        '  // 最亮帧 mean 0.115→0.097、P90 0.34→0.278，弱端 min 几乎不变',
+        '  // （0.0709→0.0691），静音帧因 topLit→0 完全不受影响。见 FINDINGS §13。',
+        '  // 历史上曾把量程推到 19/22 救「5–15 全同亮」——那时病灶是上游频段',
+        '  // 被 tilt 削顶（§1.2），不是量程本身，勿混为一谈。',
         '  float norm = clamp(elevation / 8.5, 0.0, 1.0);',
-        '  float lift = smoothstep(0.0, 0.42, norm);',
+        '  float lift = smoothstep(0.0, uLiftEnd, norm);',
         '  float distFade = 1.0 - smoothstep(uHalf * 0.48, uHalf * 0.89, dist);',
         '',
         '  // 空间暖度：壁纸的 warmBlend——音色越暖、离岛心越近，色相越往',
@@ -1030,7 +1049,7 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '',
         '  // 混响尾：直达声过后，整个空间仍在低幅振荡。',
         '  // 用极慢的相位错开，读起来是「空气还没静下来」，不是又一层噪点。',
-        '  col += glow * tail * 0.34 * (0.55 + 0.45 * sin(uTime * 1.6 + seed * 13.0));',
+        '  col += glow * tail * uTailGain * (0.55 + 0.45 * sin(uTime * 1.6 + seed * 13.0));',
         '',
         '  // 双耳强度差（ILD）：高频内容在哪个方向，画面就往哪一侧压一点亮度。',
         '  // 这是听觉定位里最直接的一条线索（>1.5kHz 时 ILD 主导），',
@@ -1042,7 +1061,10 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '  // P90 动 0.086，「节拍冲击在像素层面几乎不成立」（FINDINGS §1.4）。',
         '  // 改成对 glow 的加法：光落在已经亮的地方，黑的地方仍然黑，',
         '  // 拍点于是读得出来，也不会把底座一起抬成灰雾。',
-        '  col += glow * uPunch * 0.32;',
+        '  // headroom 加权试过一版（1/(1+1.2*luma)）：同一强拍帧只降 2–5%，',
+        '  // 而关掉整条 punch 也只解释约 10% 的过曝，收益不足以抵消复杂度，',
+        '  // 且会污染下一轮对传递曲线的单变量归因，故回退。见 FINDINGS §13。',
+        '  col += glow * uPunch * uPunchGain;',
         '',
         '  // 空气透视 + 边缘溶解：地形没有边界，只有「看不见为止」',
         '  // 大气透视按视距，边缘溶解按平面距离——两者不能混用：',
@@ -1263,7 +1285,8 @@ const progressLabel = i18n(I18nKey.musicProgress);
             'uRipA', 'uRipB', 'uField', 'uCamPos', 'uSpatial', 'uTail', 'uMirror',
             'uBg', 'uDeep', 'uCore', 'uEdge', 'uWarm', 'uWarmEdge', 'uRip', 'uPeak',
             'uWarmth', 'uGlow', 'uPeakAmt',
-            'uSharp', 'uAir', 'uBrill', 'uPres', 'uPunch', 'uPan'];
+            'uSharp', 'uAir', 'uBrill', 'uPres', 'uPunch', 'uPan',
+            'uPunchGain', 'uTailGain', 'uLiftEnd'];
         // 数组 uniform 的位置查询有坑：规范允许用「uField」这种基名去查，
         // 等价于 uField[0]，但 ANGLE / SwiftShader 上实测会返回 null，
         // 而 set4fv 里的 if (uni[name]) 会把 null 静默吞掉——整套波前与
@@ -3165,6 +3188,9 @@ const progressLabel = i18n(I18nKey.musicProgress);
             set1f('uPres', sm.presence * 0.6);
             set1f('uPunch', punch);
             set1f('uPan', panAmt);
+            set1f('uPunchGain', PUNCH_GAIN);
+            set1f('uTailGain', TAIL_GAIN);
+            set1f('uLiftEnd', LIFT_END);
 
             bindMainAttribs();
 
