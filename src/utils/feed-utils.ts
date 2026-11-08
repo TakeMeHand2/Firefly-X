@@ -79,8 +79,13 @@ function collapseFeedWhitespace(html: string): string {
 /**
  * 把路径解析成绝对 URL（Atom 规范强制要求绝对 IRI）。
  * path 为相对路径时直接相对 site 求绝对。
+ *
+ * 刻意不导出：`schema-utils.ts` 里有一个同名导出，契约不同——那个接受
+ * `string | null | undefined`，会放过 http/data: 远程地址，遇到 src 相对路径
+ * 还会 console.warn。两者同名但不同用，暴露在同一个包的 API 面上迟早被拿错。
+ * 这里只在 feed 渲染内部使用，保持私有即可。
  */
-export function toAbsoluteUrl(site: URL, path: string): string {
+function toAbsoluteUrl(site: URL, path: string): string {
 	return new URL(path.startsWith("/") ? path : `/${path}`, site).href;
 }
 

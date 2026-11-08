@@ -1,7 +1,15 @@
-import { url } from "@/utils/url-utils";
 /**
  * 导航工具函数
  * 提供统一的页面导航功能，支持 Swup 无刷新跳转
+ *
+ * 这里曾经还导出了 getCurrentPath / isHomePage / isPostPage / pathsEqual。
+ * 它们没有任何调用方，且与别处的同名实现语义不一致（例如 pathsEqual 只去尾
+ * 斜杠、区分大小写，而 url-utils 的版本会去掉首尾斜杠并转小写）。
+ * 零引用的同名副本比没有更危险：后来者按名字挑一个用，行为就悄悄变了。
+ * 真正在用的同义能力分别在：
+ *   - isHomePage(pathname)  → utils/layout-utils.ts
+ *   - isPostPage()          → utils/toc-utils.ts
+ *   - pathsEqual(a, b)      → utils/url-utils.ts
  */
 
 /**
@@ -77,39 +85,4 @@ function fallbackNavigation(
 	} else {
 		window.location.href = url;
 	}
-}
-
-/**
- * 获取当前页面路径
- */
-export function getCurrentPath(): string {
-	return typeof window !== "undefined" ? window.location.pathname : "";
-}
-
-/**
- * 检查是否为首页
- */
-export function isHomePage(): boolean {
-	const path = getCurrentPath();
-	return path === url("/") || path === url("");
-}
-
-/**
- * 检查是否为文章页面
- */
-export function isPostPage(): boolean {
-	const path = getCurrentPath();
-	return path.startsWith(url("/posts/"));
-}
-
-/**
- * 检查两个路径是否相等
- */
-export function pathsEqual(path1: string, path2: string): boolean {
-	// 标准化路径（移除末尾斜杠）
-	const normalize = (path: string) => {
-		return path.endsWith("/") && path.length > 1 ? path.slice(0, -1) : path;
-	};
-
-	return normalize(path1) === normalize(path2);
 }
