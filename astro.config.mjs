@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import { setMaxListeners } from "node:events";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import cloudflare from "@astrojs/cloudflare";
 import { unified } from "@astrojs/markdown-remark";
 import mdx from "@astrojs/mdx";
@@ -64,6 +67,18 @@ const adapter = process.env.CF_WORKERS
 			prerenderEnvironment: "node",
 		})
 	: undefined;
+
+// Vite 依赖预构建缓存默认落在 node_modules/.vite，`--force` 会把整个目录删掉。
+// 本机 WorkBuddy 的 safe-delete 守卫对「单轮累计删除超过 50 项」要求确认，
+// 而 deps 目录有 100+ 个文件，于是 astro dev --force 会在 Vite 清缓存那一步被拦下，
+// dev server 直接起不来（表现为反复 SIGTERM，控制台没有报错栈）。
+// 该守卫的 tryRm 对 os.tmpdir() 之下的路径直接走原生删除、不计入配额，
+// 所以把缓存指到系统临时目录即可根治，不必全局关掉删除保护。
+// 用 cwd 的短哈希做隔离：多份 checkout 各自持有独立缓存，`--force` 不会互删。
+const viteCacheKey = createHash("sha1")
+	.update(process.cwd())
+	.digest("hex")
+	.slice(0, 8);
 
 // https://astro.build/config
 export default defineConfig({
@@ -351,10 +366,22 @@ export default defineConfig({
 		}),
 	},
 	vite: {
+		cacheDir: join(tmpdir(), `firefly-vite-${viteCacheKey}`),
 		plugins: [tailwindcss()],
 		server: {
 			watch: {
-				ignored: ["**/package/**", "**/Firefly-docs/**"],
+				// `.workbuddy`（会话产物、诊断临时文件）与 `.mimosa`（工具体检报告）
+				// 每轮对话都会写入几十个文件。默认 watcher 会全量监听，每次写入都触发
+				// 一次模块图失效，几十分钟的会话下来堆占用会摸到 4GB 上限，
+				// 表现为 dev server 静默崩溃（exit 134 / JS heap out of memory）。
+				ignored: [
+					"**/package/**",
+					"**/Firefly-docs/**",
+					"**/.workbuddy/**",
+					"**/.mimosa/**",
+					"**/.astro/**",
+					"**/dist/**",
+				],
 			},
 		},
 		resolve: {

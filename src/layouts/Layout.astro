@@ -9,7 +9,9 @@ import FontSetup from "@components/features/FontSetup.astro";
 import GithubCardManager from "@components/features/GithubCardManager.astro";
 import MusicManager from "@components/features/MusicManager.astro";
 import MusicPlayerView from "@components/features/MusicPlayerView.astro";
+import MusicVisualizer from "@components/features/MusicVisualizer.astro";
 import SakuraEffect from "@components/features/SakuraEffect.astro";
+import VisitorGreeting from "@components/features/VisitorGreeting.astro";
 import WavesEffect from "@components/features/WavesEffect.astro";
 import ConfigCarrier from "@components/layout/ConfigCarrier.astro";
 import BrowserChrome from "@/components/layout/BrowserChrome.astro";
@@ -568,9 +570,15 @@ const ogImageAlt = propsOgImageAlt ?? pageTitle;
       <MusicPlayerView />
     )}
 
+    <!-- 全屏音频可视化层：DOM 由脚本搬到 body 下，Swup 换页后继续存活 -->
+    <MusicVisualizer />
+
 
     <!-- Sakura Effect -->
     <SakuraEffect />
+
+    <!-- Visitor Greeting -->
+    <VisitorGreeting />
 
     <!-- Water Waves Effect -->
     <WavesEffect />

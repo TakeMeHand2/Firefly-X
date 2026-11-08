@@ -24,6 +24,9 @@ const viewConfigStr = JSON.stringify({
 		error: i18n(I18nKey.musicError),
 		play: i18n(I18nKey.musicPlay),
 		pause: i18n(I18nKey.musicPause),
+		prev: i18n(I18nKey.musicPrev),
+		next: i18n(I18nKey.musicNext),
+		progress: i18n(I18nKey.musicProgress),
 		noCover: i18n(I18nKey.musicNoCover),
 		music: i18n(I18nKey.music),
 	},
@@ -42,11 +45,11 @@ const viewConfigStr = JSON.stringify({
                 <span class="eq-bar w-[3px] bg-(--primary) rounded-sm"></span>
                 <span class="eq-bar w-[3px] bg-(--primary) rounded-sm"></span>
             </div>
-            <svg class="eq-play-icon text-(--primary) hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="eq-play-icon text-(--music-accent) hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </div>
     </div>
     <div class="flex-1 min-w-0">
-        <div class="item-title text-xs font-bold text-neutral-700 dark:text-neutral-200 truncate group-hover:text-(--primary) transition-colors"></div>
+        <div class="item-title text-xs font-bold text-neutral-700 dark:text-neutral-200 truncate group-hover:text-(--music-accent) transition-colors"></div>
         <div class="item-artist text-[10px] text-neutral-400 truncate"></div>
     </div>
 </div>
@@ -119,6 +122,7 @@ const viewConfigStr = JSON.stringify({
             volContainer: widget.querySelector('.vol-container'),
             volBar: widget.querySelector('.vol-bar'),
             volThumb: widget.querySelector('.vol-thumb'),
+            btnVisualizer: root.querySelector('.btn-visualizer'),
             btnLrc: root.querySelector('.btn-lrc-toggle'),
             iconLrcOn: root.querySelector('.icon-lrc-on'),
             iconLrcOff: root.querySelector('.icon-lrc-off'),
@@ -169,16 +173,18 @@ const viewConfigStr = JSON.stringify({
 
         function updatePlayStateUI(isPlaying) {
             if (isPlaying) {
-                ui.btnPlay.classList.add('bg-(--primary)', 'text-white', 'hover:brightness-110');
-                ui.btnPlay.classList.remove('bg-(--btn-regular-bg)', 'hover:bg-(--btn-regular-bg-hover)', 'active:bg-(--btn-regular-bg-active)', 'text-(--primary)');
+                ui.btnPlay.classList.add('bg-(--music-accent)', 'text-white', 'hover:brightness-110');
+                ui.btnPlay.classList.remove('bg-(--btn-regular-bg)', 'hover:bg-(--btn-regular-bg-hover)', 'active:bg-(--btn-regular-bg-active)', 'text-(--music-accent)');
+                ui.btnPlay.dataset.playing = 'true';
                 ui.iconPlay.classList.add('hidden');
                 ui.iconPause.classList.remove('hidden');
                 ui.cover.style.animationPlayState = 'running';
                 ui.btnPlay.setAttribute('aria-label', cfg.i18n.pause);
                 ui.btnPlay.title = cfg.i18n.pause;
             } else {
-                ui.btnPlay.classList.remove('bg-(--primary)', 'text-white', 'hover:brightness-110');
-                ui.btnPlay.classList.add('bg-(--btn-regular-bg)', 'hover:bg-(--btn-regular-bg-hover)', 'active:bg-(--btn-regular-bg-active)', 'text-(--primary)');
+                ui.btnPlay.classList.remove('bg-(--music-accent)', 'text-white', 'hover:brightness-110');
+                ui.btnPlay.classList.add('bg-(--btn-regular-bg)', 'hover:bg-(--btn-regular-bg-hover)', 'active:bg-(--btn-regular-bg-active)', 'text-(--music-accent)');
+                ui.btnPlay.dataset.playing = 'false';
                 ui.iconPlay.classList.remove('hidden');
                 ui.iconPause.classList.add('hidden');
                 ui.cover.style.animationPlayState = 'paused';
@@ -200,12 +206,13 @@ const viewConfigStr = JSON.stringify({
                     playIcon.classList.remove('hidden');
                 }
             });
+
         }
 
         function updateModeUI(playMode) {
-            var primaryColor = 'text-(--primary)';
+            var primaryColor = 'text-(--music-accent)';
             if (playMode === 0) {
-                ui.btnRepeat.className = 'p-2 active:scale-95 transition-colors text-neutral-300 dark:text-neutral-600 hover:text-(--primary)';
+                ui.btnRepeat.className = 'p-2 active:scale-95 transition-colors text-neutral-300 dark:text-neutral-600 hover:text-(--music-accent)';
                 ui.iconRepeat.classList.remove('hidden');
                 ui.iconRepeatOne.classList.add('hidden');
                 ui.iconShuffle.classList.add('hidden');
@@ -271,7 +278,6 @@ const viewConfigStr = JSON.stringify({
         }
 
         // ── Virtual scroll helpers (absolute-position based) ──────
-        var PRIMARY_COLOR = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#6366f1';
 
         function vsApplyActiveStyle(el, isActive) {
             var overlay = el.querySelector('.item-active-overlay');
@@ -284,7 +290,7 @@ const viewConfigStr = JSON.stringify({
                 el.setAttribute('aria-current', 'true');
                 overlay.classList.remove('hidden');
                 overlay.classList.add('flex');
-                title.style.color = PRIMARY_COLOR;
+                title.style.color = 'var(--music-accent)';
                 if (isPlaying) {
                     eqBars.classList.remove('hidden');
                     eqBars.classList.add('flex');
@@ -456,7 +462,7 @@ const viewConfigStr = JSON.stringify({
             }
             lyrics.forEach(function (line, index) {
                 var lineEl = document.createElement('div');
-                lineEl.className = 'lrc-line transition-all duration-300 text-sm text-neutral-400 py-1 cursor-pointer hover:text-(--primary) flex flex-col items-center justify-center leading-snug';
+                lineEl.className = 'lrc-line transition-all duration-300 text-sm text-neutral-400 py-1 cursor-pointer hover:text-(--music-accent) flex flex-col items-center justify-center leading-snug';
 
                 // 智能识别括号内的中文翻译（如 "人はみんな幸福を願い (人们都祈求幸福)"），拆为上下双行
                 var match = line.text.match(/^(.*?)\s*[(（](.+?)[)）]\s*$/);
@@ -493,14 +499,14 @@ const viewConfigStr = JSON.stringify({
             lines.forEach(function (line, i) {
                 var trans = line.querySelector('.lrc-trans');
                 if (i === index) {
-                    line.classList.add('text-(--primary)', 'font-bold', 'text-base');
+                    line.classList.add('text-(--music-accent)', 'font-bold', 'text-base');
                     line.classList.remove('text-neutral-400', 'text-sm');
                     if (trans) {
                         trans.classList.remove('opacity-70');
                         trans.classList.add('opacity-90');
                     }
                 } else {
-                    line.classList.remove('text-(--primary)', 'font-bold', 'text-base');
+                    line.classList.remove('text-(--music-accent)', 'font-bold', 'text-base');
                     line.classList.add('text-neutral-400', 'text-sm');
                     if (trans) {
                         trans.classList.remove('opacity-90');
@@ -574,7 +580,7 @@ const viewConfigStr = JSON.stringify({
             var d = e.detail;
             setLoading(false);
             if (d.playlist.length > 0) {
-                renderPlaylist(d.playlist, 0);
+                renderPlaylist(d.playlist, d.currentIndex || 0);
                 updateModeUI(d.playMode);
                 updateVolumeUI(d.volume, d.isMuted);
             } else {
@@ -649,7 +655,7 @@ const viewConfigStr = JSON.stringify({
                 ui.playlistDrawer.classList.remove('opacity-100');
                 ui.playlistDrawer.classList.add('opacity-0');
                 if (ui.btnDrawer) {
-                    ui.btnDrawer.classList.remove('text-(--primary)');
+                    ui.btnDrawer.classList.remove('text-(--music-accent)');
                     ui.btnDrawer.classList.add('text-neutral-400');
                 }
                 local.vs.drawerOpen = false;
@@ -659,7 +665,7 @@ const viewConfigStr = JSON.stringify({
             ui.lrcDrawer.classList.add('opacity-100');
             ui.lrcDrawer.classList.remove('opacity-0');
             if (ui.btnLrc) {
-                ui.btnLrc.classList.add('text-(--primary)');
+                ui.btnLrc.classList.add('text-(--music-accent)');
                 ui.btnLrc.classList.remove('text-neutral-400');
                 if (ui.iconLrcOn) ui.iconLrcOn.classList.remove('hidden');
                 if (ui.iconLrcOff) ui.iconLrcOff.classList.add('hidden');
@@ -672,7 +678,7 @@ const viewConfigStr = JSON.stringify({
             ui.lrcDrawer.classList.remove('opacity-100');
             ui.lrcDrawer.classList.add('opacity-0');
             if (ui.btnLrc) {
-                ui.btnLrc.classList.remove('text-(--primary)');
+                ui.btnLrc.classList.remove('text-(--music-accent)');
                 ui.btnLrc.classList.add('text-neutral-400');
                 if (ui.iconLrcOn) ui.iconLrcOn.classList.add('hidden');
                 if (ui.iconLrcOff) ui.iconLrcOff.classList.remove('hidden');
@@ -680,8 +686,14 @@ const viewConfigStr = JSON.stringify({
         }
 
         // ── Button click delegates ───────────────────────────────
-        ui.btnPlay.addEventListener('click', function (e) {
-            if (e.detail > 0) ui.btnPlay.blur();
+        if (ui.btnVisualizer) {
+            ui.btnVisualizer.addEventListener('click', function (e) {
+                if (e.detail > 0) ui.btnVisualizer.blur();
+                window.dispatchEvent(new CustomEvent('fm:open-visualizer'));
+            });
+        }
+
+        ui.btnPlay.addEventListener('click', function (e) {            if (e.detail > 0) ui.btnPlay.blur();
             var st = mgr.getState();
             // 进入网站首次点击播放时，左侧播放器自动展开展歌词
             if (cfg.showLyrics && ui.btnLrc && !st.isPlaying && !window.__fireflyHasAutoOpenedLyrics) {
@@ -871,7 +883,7 @@ const viewConfigStr = JSON.stringify({
                 ui.playlistDrawer.classList.remove('opacity-100');
                 ui.playlistDrawer.classList.add('opacity-0');
                 ui.btnDrawer.classList.add('text-neutral-400');
-                ui.btnDrawer.classList.remove('text-(--primary)');
+                ui.btnDrawer.classList.remove('text-(--music-accent)');
                 local.vs.drawerOpen = false;
             } else {
                 // Close lyrics if open
@@ -881,7 +893,7 @@ const viewConfigStr = JSON.stringify({
                 ui.playlistDrawer.classList.add('opacity-100');
                 ui.playlistDrawer.classList.remove('opacity-0');
                 ui.btnDrawer.classList.remove('text-neutral-400');
-                ui.btnDrawer.classList.add('text-(--primary)');
+                ui.btnDrawer.classList.add('text-(--music-accent)');
                 local.vs.drawerOpen = true;
 
                 // Render playlist after drawer transition settles
@@ -982,7 +994,204 @@ const viewConfigStr = JSON.stringify({
         }
     }
 
+    // ── Mini player (persists across Swup) ───────────────────
+    // Created once and appended to <body>; Swup only swaps the containers, so
+    // the capsule survives navigation. Later script runs just refresh it.
+    function setupMiniPlayer() {
+        if (window.__fireflyMiniPlayer) {
+            window.__fireflyMiniPlayer.refresh();
+            return;
+        }
+
+        var el = document.createElement('div');
+        el.id = 'music-mini-player';
+        el.className = 'music-mini';
+        el.setAttribute('role', 'region');
+        el.setAttribute('aria-label', cfg.i18n.music);
+        el.setAttribute('aria-hidden', 'true');
+        el.inert = true;
+        el.innerHTML =
+            '<div class="music-mini-glow" aria-hidden="true"></div>' +
+            '<button type="button" class="music-mini-open" data-mini="open">' +
+            '<span class="music-mini-cover-wrap"><img class="music-mini-cover" alt="" /></span>' +
+            '<span class="music-mini-text"><span class="music-mini-title"></span><span class="music-mini-artist"></span></span>' +
+            '</button>' +
+            '<div class="music-mini-controls">' +
+            '<button type="button" class="music-mini-btn" data-mini="prev" aria-label="' + cfg.i18n.prev + '">' +
+            '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>' +
+            '<button type="button" class="music-mini-btn music-mini-play" data-mini="toggle" aria-label="' + cfg.i18n.play + '">' +
+            '<svg class="mini-icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>' +
+            '<svg class="mini-icon-pause hidden" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>' +
+            '</button>' +
+            '<button type="button" class="music-mini-btn" data-mini="next" aria-label="' + cfg.i18n.next + '">' +
+            '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>' +
+            '</div>' +
+            '<div class="music-mini-progress" data-mini="progress" role="slider" tabindex="0" aria-label="' + cfg.i18n.progress + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+            '<div class="music-mini-progress-bar"></div></div>';
+        document.body.appendChild(el);
+
+        var ui = {
+            cover: el.querySelector('.music-mini-cover'),
+            title: el.querySelector('.music-mini-title'),
+            artist: el.querySelector('.music-mini-artist'),
+            toggle: el.querySelector('[data-mini="toggle"]'),
+            iconPlay: el.querySelector('.mini-icon-play'),
+            iconPause: el.querySelector('.mini-icon-pause'),
+            progress: el.querySelector('.music-mini-progress'),
+            progressBar: el.querySelector('.music-mini-progress-bar')
+        };
+
+        var miniVisible = false;
+        var panel = null;
+        var panelObserver = null;
+
+        function widgetVisible(w) {
+            var floatPanel = w.closest('.float-panel');
+            if (floatPanel && (floatPanel.classList.contains('float-panel-closed') || floatPanel.hasAttribute('inert'))) {
+                return false;
+            }
+            var rect = w.getBoundingClientRect();
+            if (rect.width < 1 || rect.height < 1) return false;
+            return rect.bottom > 90 && rect.top < window.innerHeight - 40;
+        }
+
+        function anyWidgetVisible() {
+            var widgets = document.querySelectorAll('.music-player-widget');
+            for (var i = 0; i < widgets.length; i++) {
+                if (widgetVisible(widgets[i])) return true;
+            }
+            return false;
+        }
+
+        function setVisible(next) {
+            if (next === miniVisible) return;
+            miniVisible = next;
+            el.classList.toggle('is-visible', next);
+            el.setAttribute('aria-hidden', next ? 'false' : 'true');
+            el.inert = !next;
+        }
+
+        function setProgress(pct) {
+            var value = Math.max(0, Math.min(100, pct || 0));
+            ui.progressBar.style.width = value + '%';
+            ui.progress.setAttribute('aria-valuenow', Math.round(value).toString());
+        }
+
+        function syncPlayState(isPlaying) {
+            ui.iconPlay.classList.toggle('hidden', isPlaying);
+            ui.iconPause.classList.toggle('hidden', !isPlaying);
+            ui.toggle.setAttribute('aria-label', isPlaying ? cfg.i18n.pause : cfg.i18n.play);
+            ui.toggle.title = isPlaying ? cfg.i18n.pause : cfg.i18n.play;
+        }
+
+        function syncTrack(track) {
+            if (!track) return;
+            ui.title.textContent = track.name || '';
+            ui.title.title = track.name || '';
+            ui.artist.textContent = track.artist || '';
+            ui.artist.title = track.artist || '';
+            if (track.pic) {
+                ui.cover.src = track.pic;
+                ui.cover.alt = (track.name || '') + ' - ' + (track.artist || '');
+            } else {
+                ui.cover.removeAttribute('src');
+                ui.cover.alt = cfg.i18n.noCover;
+            }
+            setProgress(0);
+        }
+
+        function bindPanel() {
+            var next = document.getElementById('music-nav-panel');
+            if (next === panel) return;
+            if (panelObserver) {
+                panelObserver.disconnect();
+                panelObserver = null;
+            }
+            panel = next;
+            if (!panel) return;
+            panelObserver = new MutationObserver(function () { refresh(); });
+            panelObserver.observe(panel, { attributes: true, attributeFilter: ['class', 'inert'] });
+        }
+
+        function refresh() {
+            bindPanel();
+            var s = mgr.getState();
+            if (!s.initialized || !s.track) {
+                setVisible(false);
+                return;
+            }
+            syncPlayState(s.isPlaying);
+            setVisible(!anyWidgetVisible() && (s.isPlaying || miniVisible));
+        }
+
+        function openPanel() {
+            var navPanel = document.getElementById('music-nav-panel');
+            setVisible(false);
+            if (!navPanel || !navPanel.classList.contains('float-panel-closed')) return;
+            var trigger = document.getElementById('music-player-switch');
+            if (!trigger) return;
+            // Defer: the current click bubbles to document and the floating-panel
+            // "click outside" handler would otherwise close the panel immediately.
+            setTimeout(function () { trigger.click(); }, 0);
+        }
+
+        function seekFromPointer(e) {
+            var rect = ui.progress.getBoundingClientRect();
+            if (!rect.width) return;
+            var pct = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+            setProgress(pct * 100);
+            mgr.seek(pct);
+        }
+
+        el.querySelector('[data-mini="open"]').addEventListener('click', openPanel);
+        el.querySelector('[data-mini="prev"]').addEventListener('click', function () { mgr.playPrev(); });
+        el.querySelector('[data-mini="next"]').addEventListener('click', function () { mgr.playNext(); });
+        ui.toggle.addEventListener('click', function () { mgr.togglePlay(); });
+
+        ui.progress.addEventListener('pointerdown', function (e) {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            seekFromPointer(e);
+        });
+        ui.progress.addEventListener('keydown', function (e) {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            var s = mgr.getState();
+            if (!s.duration) return;
+            e.preventDefault();
+            mgr.seekToTime(s.currentTime + (e.key === 'ArrowRight' ? 5 : -5));
+        });
+
+        window.addEventListener('fm:track', function (e) {
+            syncTrack(e.detail.track);
+            refresh();
+        });
+        window.addEventListener('fm:time', function (e) {
+            setProgress(e.detail.progress);
+        });
+        window.addEventListener('fm:play-state', function (e) {
+            syncPlayState(e.detail.isPlaying);
+            refresh();
+        });
+        var scrollRaf = 0;
+        document.addEventListener('scroll', function () {
+            if (scrollRaf) return;
+            scrollRaf = requestAnimationFrame(function () {
+                scrollRaf = 0;
+                refresh();
+            });
+        }, { passive: true, capture: true });
+        window.addEventListener('resize', refresh);
+
+        window.__fireflyMiniPlayer = { refresh: refresh };
+
+        var initial = mgr.getState();
+        syncTrack(initial.track);
+        syncPlayState(initial.isPlaying);
+        refresh();
+    }
+
     initAll();
+    setupMiniPlayer();
 })();
 </script>
 
@@ -1000,5 +1209,206 @@ const viewConfigStr = JSON.stringify({
     @keyframes eq-bounce {
         0%, 100% { height: 4px; }
         50%      { height: 14px; }
+    }
+</style>
+
+<style is:global>
+    /* 封面取色的兜底：管理器未提取到颜色时回到主题色 */
+    :root {
+        --music-accent: var(--primary);
+        --music-accent-soft: color-mix(in oklab, var(--primary) 32%, transparent);
+    }
+
+    /* ── 悬浮迷你播放器 ─────────────────────────────────── */
+    .music-mini {
+        position: fixed;
+        left: 1rem;
+        bottom: 1rem;
+        z-index: 900;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        width: min(20rem, calc(100vw - 5.5rem));
+        padding: 0.4rem 0.55rem 0.5rem;
+        border-radius: 1.05rem;
+        background: color-mix(in oklab, var(--card-bg) 88%, transparent);
+        border: 1px solid color-mix(in oklab, var(--primary) 16%, transparent);
+        box-shadow: 0 16px 40px -20px rgba(0, 0, 0, 0.45);
+        -webkit-backdrop-filter: blur(14px) saturate(1.2);
+        backdrop-filter: blur(14px) saturate(1.2);
+        opacity: 0;
+        transform: translateY(14px) scale(0.98);
+        pointer-events: none;
+        transition: opacity 0.24s ease, transform 0.24s ease;
+        overflow: hidden;
+    }
+
+    .music-mini.is-visible {
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+    }
+
+    .music-mini-glow {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(120% 140% at 0% 50%, var(--music-accent-soft), transparent 62%);
+    }
+
+    .music-mini-open {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        flex: 1;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .music-mini-cover-wrap {
+        flex-shrink: 0;
+        width: 2.35rem;
+        height: 2.35rem;
+        border-radius: 0.65rem;
+        overflow: hidden;
+        background: var(--music-accent-soft);
+        box-shadow: 0 0 0 1px color-mix(in oklab, var(--music-accent) 35%, transparent);
+    }
+
+    .music-mini-cover {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .music-mini-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        gap: 1px;
+    }
+
+    .music-mini-title {
+        font-size: 0.78rem;
+        font-weight: 700;
+        line-height: 1.2;
+        color: var(--deep-text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .music-mini-artist {
+        font-size: 0.66rem;
+        line-height: 1.2;
+        color: var(--content-meta);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .music-mini-controls {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 0.1rem;
+        flex-shrink: 0;
+    }
+
+    .music-mini-btn {
+        display: grid;
+        place-items: center;
+        width: 1.85rem;
+        height: 1.85rem;
+        padding: 0;
+        border: 0;
+        border-radius: 0.55rem;
+        background: transparent;
+        color: var(--content-meta);
+        cursor: pointer;
+        transition: background-color 0.18s ease, color 0.18s ease, transform 0.12s ease;
+    }
+
+    .music-mini-btn svg {
+        width: 1.05rem;
+        height: 1.05rem;
+    }
+
+    .music-mini-btn:hover {
+        color: var(--music-accent);
+        background: var(--btn-regular-bg);
+    }
+
+    .music-mini-btn:active {
+        transform: scale(0.9);
+    }
+
+    .music-mini-btn:focus-visible,
+    .music-mini-progress:focus-visible {
+        outline: 2px solid var(--music-accent);
+        outline-offset: 2px;
+    }
+
+    .music-mini-play {
+        color: #fff;
+        background: var(--music-accent);
+        box-shadow: 0 6px 16px -8px var(--music-accent);
+    }
+
+    .music-mini-play:hover {
+        color: #fff;
+        background: var(--music-accent);
+        filter: brightness(1.06);
+    }
+
+    .music-mini-progress {
+        position: absolute;
+        left: 0.8rem;
+        right: 0.8rem;
+        bottom: 0.2rem;
+        height: 2px;
+        border-radius: 9999px;
+        background: color-mix(in oklab, var(--primary) 18%, transparent);
+        cursor: pointer;
+        touch-action: none;
+    }
+
+    .music-mini-progress::before {
+        content: "";
+        position: absolute;
+        inset: -6px 0;
+    }
+
+    .music-mini-progress-bar {
+        height: 100%;
+        width: 0;
+        border-radius: inherit;
+        background: var(--music-accent);
+        transition: width 0.15s linear;
+    }
+
+    /* 移动端让出右下角返回顶部按钮的位置 */
+    @media (max-width: 767px) {
+        .music-mini {
+            left: 0.75rem;
+            right: 4.25rem;
+            width: auto;
+            bottom: calc(0.75rem + env(safe-area-inset-bottom));
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .music-mini {
+            transition: none;
+        }
+        .music-mini-progress-bar {
+            transition: none;
+        }
     }
 </style>

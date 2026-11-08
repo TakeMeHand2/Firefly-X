@@ -14,6 +14,9 @@ const localPlaylist =
 				return {
 					name: song.name,
 					artist: song.artist,
+					album: song.album,
+					trackNo: song.trackNo,
+					bpm: song.bpm,
 					url: isFullUrl(song.url) ? song.url : url(song.url),
 					pic: song.cover
 						? isFullUrl(song.cover)
@@ -33,6 +36,8 @@ const managerConfigStr = JSON.stringify({
 	siteTitle: siteConfig.title,
 	mode: config.mode,
 	meting: config.meting,
+	// 固定配色：传给浏览器端，决定 --music-accent 与可视化色相
+	theme: config.theme,
 	localPlaylist: localPlaylist,
 	volume: config.volume ?? 0.7,
 	playMode: config.playMode ?? "list",
@@ -54,6 +59,9 @@ const managerConfigStr = JSON.stringify({
 		pause: i18n(I18nKey.musicPause),
 		progress: i18n(I18nKey.musicProgress),
 		noCover: i18n(I18nKey.musicNoCover),
+		close: i18n(I18nKey.musicClose),
+		like: i18n(I18nKey.musicLike),
+		unlike: i18n(I18nKey.musicUnlike),
 	},
 });
 ---
@@ -132,6 +140,206 @@ const managerConfigStr = JSON.stringify({
         window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
     }
 
+    // ── Resume state (persist track / position / mode) ───────
+    var STORAGE_KEY = 'music-player-state';
+    var STATE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+    var pendingSeek = null;
+    var lastStateSave = 0;
+
+    function readSavedState() {
+        try {
+            var raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return null;
+            var data = JSON.parse(raw);
+            if (!data || typeof data.index !== 'number') return null;
+            if (data.at && Date.now() - data.at > STATE_MAX_AGE) return null;
+            return data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function saveState(force) {
+        if (!state.initialized || state.playlist.length === 0) return;
+        if (audio.readyState === 0) return; // metadata not loaded yet
+        var now = Date.now();
+        if (!force && now - lastStateSave < 4000) return;
+        lastStateSave = now;
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                index: state.currentIndex,
+                time: audio.currentTime || 0,
+                mode: state.playMode,
+                at: now
+            }));
+        } catch (e) {
+            // Ignore storage quota / privacy mode errors
+        }
+    }
+
+    // ── Cover accent color ───────────────────────────────────
+    var lastAccent = null;
+    // 主色 + 次级色：可视化的三段调色需要两个色相，单色相做双色调会很廉价
+    var lastPalette = null;
+
+    // 固定配色模式：配置了 theme.accent 就不再读封面像素。
+    // 跨域封面的 canvas 取色本来就会静默失败（y.gtimg.cn 不带 CORS 头），
+    // 与其逐曲降级成主题色，不如全站只用这一个状态色——色相稳定，
+    // 也省掉每首歌一次解码 + 32×32 缩放的取色开销。
+    var fixedAccent = parseHexColor(config.theme && config.theme.accent);
+
+    function parseHexColor(hex) {
+        if (!hex || typeof hex !== 'string') return null;
+        var m = hex.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+        if (!m) return null;
+        var v = m[1];
+        if (v.length === 3) v = v[0] + v[0] + v[1] + v[1] + v[2] + v[2];
+        var r = parseInt(v.slice(0, 2), 16);
+        var g = parseInt(v.slice(2, 4), 16);
+        var b = parseInt(v.slice(4, 6), 16);
+        return rgbToHsl(r, g, b);
+    }
+
+    if (fixedAccent) {
+        // 单色相：地形与峰值共用同一色相，只靠明度/饱和度分层，
+        // 这样「音频响应」只体现在能量上，不再带任何封面的色彩倾向。
+        lastPalette = {
+            h1: fixedAccent.h,
+            s1: clampNum(fixedAccent.s, 0.45, 0.92),
+            h2: fixedAccent.h,
+            s2: clampNum(fixedAccent.s, 0.45, 0.92)
+        };
+        applyAccent(fixedAccent.h, clampNum(fixedAccent.s, 0.45, 0.9));
+    }
+
+    function clampNum(v, min, max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    function rgbToHsl(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        var max = Math.max(r, g, b);
+        var min = Math.min(r, g, b);
+        var h = 0, s = 0, l = (max + min) / 2;
+        if (max !== min) {
+            var d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+            else if (max === g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            h /= 6;
+        }
+        return { h: h * 360, s: s, l: l };
+    }
+
+    function applyAccent(h, s) {
+        lastAccent = { h: h, s: s };
+        var dark = document.documentElement.classList.contains('dark');
+        var l = dark ? 0.66 : 0.5;
+        var hh = Math.round(h);
+        var ss = Math.round(s * 100);
+        var ll = Math.round(l * 100);
+        var root = document.documentElement;
+        root.style.setProperty('--music-accent', 'hsl(' + hh + ' ' + ss + '% ' + ll + '%)');
+        root.style.setProperty('--music-accent-soft', 'hsla(' + hh + ', ' + ss + '%, ' + ll + '%, 0.32)');
+    }
+
+    function clearAccent() {
+        lastAccent = null;
+        lastPalette = null;
+        var root = document.documentElement;
+        root.style.removeProperty('--music-accent');
+        root.style.removeProperty('--music-accent-soft');
+    }
+
+    function extractAccent(src) {
+        // 固定色模式：完全不解码封面，避免一次无用的大图请求 + canvas 取色
+        if (fixedAccent) return;
+        if (!src) {
+            clearAccent();
+            return;
+        }
+        var img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.referrerPolicy = 'no-referrer';
+        img.onload = function () {
+            try {
+                var size = 32;
+                var canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                var ctx = canvas.getContext('2d', { willReadFrequently: true });
+                if (!ctx) { clearAccent(); return; }
+                ctx.drawImage(img, 0, 0, size, size);
+                var data = ctx.getImageData(0, 0, size, size).data;
+
+                var buckets = [];
+                for (var i = 0; i < 12; i++) {
+                    buckets.push({ w: 0, r: 0, g: 0, b: 0 });
+                }
+                for (var p = 0; p < data.length; p += 4) {
+                    if (data[p + 3] < 128) continue;
+                    var r = data[p], g = data[p + 1], b = data[p + 2];
+                    var mx = Math.max(r, g, b);
+                    var mn = Math.min(r, g, b);
+                    var l = (mx + mn) / 510;
+                    if (l < 0.1 || l > 0.92) continue;
+                    var sat = mx === mn ? 0 : (mx - mn) / (255 - Math.abs(2 * l - 1) * 255);
+                    if (sat < 0.18) continue;
+                    var hsl = rgbToHsl(r, g, b);
+                    var bi = Math.floor(hsl.h / 30) % 12;
+                    var w = sat * (1 - Math.abs(l - 0.55));
+                    buckets[bi].w += w;
+                    buckets[bi].r += r * w;
+                    buckets[bi].g += g * w;
+                    buckets[bi].b += b * w;
+                }
+
+                var best = null;
+                var bestIdx = -1;
+                for (var k = 0; k < buckets.length; k++) {
+                    if (!best || buckets[k].w > best.w) { best = buckets[k]; bestIdx = k; }
+                }
+                if (!best || best.w < 0.6) { clearAccent(); return; }
+
+                var avg = rgbToHsl(best.r / best.w, best.g / best.w, best.b / best.w);
+
+                // 次级色取色相距离 ≥70° 里权重最高的桶，用来给渐变第二端。
+                // 注意必须用圆形色相差，直接相减会把 350°/10° 判成很远。
+                var alt = null;
+                for (var m = 0; m < buckets.length; m++) {
+                    if (buckets[m].w < 0.25) continue;
+                    var dh = Math.abs((m * 30 + 15) - (bestIdx * 30 + 15));
+                    dh = Math.min(dh, 360 - dh);
+                    if (dh < 70) continue;
+                    if (!alt || buckets[m].w > alt.w) alt = buckets[m];
+                }
+
+                var avgAlt = alt
+                    ? rgbToHsl(alt.r / alt.w, alt.g / alt.w, alt.b / alt.w)
+                    : { h: (avg.h + 40) % 360, s: avg.s };
+
+                lastPalette = {
+                    h1: avg.h, s1: clampNum(avg.s, 0.45, 0.92),
+                    h2: avgAlt.h, s2: clampNum(avgAlt.s, 0.35, 0.9)
+                };
+                applyAccent(avg.h, clampNum(avg.s, 0.45, 0.9));
+            } catch (e) {
+                // Cross-origin cover or blocked canvas – fall back to theme color
+                clearAccent();
+            }
+        };
+        img.onerror = clearAccent;
+        img.src = src;
+    }
+
+    // Re-tune accent lightness when the light/dark theme changes
+    if (window.MutationObserver) {
+        new MutationObserver(function () {
+            if (lastAccent) applyAccent(lastAccent.h, lastAccent.s);
+        }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    }
+
     // ── Media Session & Play State helpers ───────────────────
     function getAbsoluteUrl(url) {
         if (!url) return "";
@@ -174,7 +382,7 @@ const managerConfigStr = JSON.stringify({
             navigator.mediaSession.metadata = new MediaMetadata({
                 title: track.name || "",
                 artist: track.artist || "",
-                album: config.siteTitle || "Firefly Music",
+                album: track.album || config.siteTitle || "Firefly Music",
                 artwork: artwork
             });
         } catch (e) {
@@ -366,6 +574,7 @@ const managerConfigStr = JSON.stringify({
     // ── Track loading ────────────────────────────────────────
     function loadTrack(index, autoPlay) {
         if (index < 0 || index >= state.playlist.length) return;
+        pendingSeek = null; // a new track must not inherit a stale resume seek
         state.currentIndex = index;
         var track = state.playlist[index];
         var ver = ++loadVersion;
@@ -380,6 +589,19 @@ const managerConfigStr = JSON.stringify({
 
         var matchId = track.url.match(/[?&]id=([^&]+)/);
         var matchServer = track.url.match(/[?&]server=([^&]+)/);
+
+        // 音频源与元数据源分离：歌单接口只负责标题/封面/歌词，音频另用
+        // audioApi 生成的直链，并排到候选队首。
+        if (matchId && matchServer && config.meting && config.meting.audioApi) {
+            var primaryAudio = config.meting.audioApi
+                .replace(':server', matchServer[1])
+                .replace(':type', 'url')
+                .replace(':id', matchId[1]);
+            if (primaryAudio !== track.url) {
+                currentTrackUrls.unshift(primaryAudio);
+            }
+        }
+
         if (matchId && matchServer && config.meting && config.meting.fallbackApis) {
             config.meting.fallbackApis.forEach(function (fallback) {
                 var fallbackUrl = fallback
@@ -395,6 +617,8 @@ const managerConfigStr = JSON.stringify({
         loadLyrics(track);
 
         updateMediaSessionMetadata(track);
+
+        extractAccent(track.pic);
 
         emit('fm:track', { index: index, track: track, autoPlay: !!autoPlay });
 
@@ -450,6 +674,14 @@ const managerConfigStr = JSON.stringify({
     function setPlayMode(mode) {
         state.playMode = mode;
         emit('fm:mode', { playMode: mode });
+        try {
+            var saved = readSavedState() || { index: state.currentIndex, time: 0 };
+            saved.mode = mode;
+            saved.at = Date.now();
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+        } catch (e) {
+            // Ignore storage errors
+        }
     }
 
     function cyclePlayMode() {
@@ -495,10 +727,28 @@ const managerConfigStr = JSON.stringify({
     // ── Audio events → broadcast ─────────────────────────────
     audio.addEventListener('play', function () {
         emitPlayState(true, true);
+        // 用户手势链路里最可靠的接线时机
+        if (analyserCtx && analyserCtx.state !== 'running') {
+            var rp = analyserCtx.resume();
+            if (rp && rp.then) rp.then(ensureAnalyser).catch(function () {});
+        }
+        ensureAnalyser();
     });
+
+    // 兜底：任何手势都补一次（自动播放被拦后用户再点的情况）
+    function gestureAttach() {
+        ensureAnalyser();
+        if (analysisMode === 'live' || analysisMode === 'failed') {
+            document.removeEventListener('pointerdown', gestureAttach, true);
+            document.removeEventListener('keydown', gestureAttach, true);
+        }
+    }
+    document.addEventListener('pointerdown', gestureAttach, true);
+    document.addEventListener('keydown', gestureAttach, true);
 
     audio.addEventListener('pause', function () {
         emitPlayState(false, true);
+        saveState(true);
     });
 
     audio.addEventListener('volumechange', function () {
@@ -508,11 +758,30 @@ const managerConfigStr = JSON.stringify({
     });
 
     audio.addEventListener('loadedmetadata', function () {
+        if (pendingSeek !== null) {
+            var dur = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : pendingSeek + 1;
+            var target = Math.min(pendingSeek, Math.max(0, dur - 0.5));
+            pendingSeek = null;
+            try {
+                audio.currentTime = target;
+            } catch (e) {
+                // Ignore seek errors on unsupported streams
+            }
+            audio.preload = 'none';
+            emit('fm:time', {
+                currentTime: audio.currentTime,
+                duration: audio.duration || 0,
+                progress: audio.duration ? (audio.currentTime / audio.duration) * 100 : 0,
+                currentTimeStr: formatTime(audio.currentTime),
+                durationStr: formatTime(audio.duration)
+            });
+        }
         updateMediaSessionPositionState(true);
     });
 
     audio.addEventListener('seeked', function () {
         updateMediaSessionPositionState(true);
+        saveState(true);
     });
 
     audio.addEventListener('timeupdate', function () {
@@ -530,6 +799,8 @@ const managerConfigStr = JSON.stringify({
         });
 
         updateMediaSessionPositionState(false);
+
+        saveState(false);
 
         // Lyrics sync
         if (state.lyrics.length > 0) {
@@ -569,6 +840,14 @@ const managerConfigStr = JSON.stringify({
         }
     });
 
+    // Persist the last position when the tab is hidden or closed
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') saveState(true);
+    });
+    window.addEventListener('pagehide', function () {
+        saveState(true);
+    });
+
     // ── Init (idempotent) ────────────────────────────────────
     async function init() {
         if (state.initialized || state.initializing) return;
@@ -585,21 +864,43 @@ const managerConfigStr = JSON.stringify({
                 // Apply volume
                 audio.volume = state.volume;
 
+                var saved = readSavedState();
+                var resumeTime = 0;
+
+                if (saved && (saved.mode === 0 || saved.mode === 1 || saved.mode === 2)) {
+                    state.playMode = saved.mode;
+                }
+
                 var startIndex = 0;
-                if (state.playMode === 2) {
+                if (saved && saved.index >= 0 && saved.index < state.playlist.length) {
+                    startIndex = saved.index;
+                    resumeTime = Math.max(0, Number(saved.time) || 0);
+                } else if (state.playMode === 2) {
                     startIndex = Math.floor(Math.random() * state.playlist.length);
+                }
+
+                state.currentIndex = startIndex;
+                if (resumeTime > 1) {
+                    // Only fetch metadata so the restored position can be shown
+                    // without autoplaying.
+                    audio.preload = 'metadata';
                 }
 
                 state.initialized = true;
 
                 emit('fm:init', {
                     playlist: state.playlist,
+                    currentIndex: startIndex,
                     playMode: state.playMode,
                     volume: state.volume,
-                    isMuted: state.isMuted
+                    isMuted: state.isMuted,
+                    resumed: resumeTime > 1
                 });
 
                 loadTrack(startIndex, false);
+
+                // loadTrack clears pendingSeek, so arm the restore after it
+                if (resumeTime > 1) pendingSeek = resumeTime;
                 setupMediaSession();
             } else {
                 state.initialized = true;
@@ -624,6 +925,368 @@ const managerConfigStr = JSON.stringify({
         } finally {
             state.initializing = false;
         }
+    }
+
+    // ── Web Audio analyser ───────────────────────────────────
+    // 仅供可视化取频谱，不参与任何播放控制。三条硬约束：
+    // 1) createMediaElementSource 一旦调用，音频就被永久改道进该 AudioContext；
+    //    上下文处于 suspended 就等于静音，且无法回退成直连。所以必须等 state
+    //    真正变成 running 之后才接线。
+    // 2) 无手势时 new AudioContext() 只能拿到 suspended，必须靠用户手势 resume()。
+    // 3) crossOrigin=anonymous 已在元素上设好，但仍有「能出声、频段恒为 0」的
+    //    静默失败（被 CORS 污染且不抛错）。用连续全 0 帧计数识别后降级合成频谱。
+    var FFT_SIZE = 4096;
+    var analyserCtx = null;
+    var analyserNode = null;
+    var analyserSrc = null;
+    var freqData = null;
+    // 时域缓冲：用于真响度（RMS）。频谱均值与响度不是一回事——
+    // 频谱稀疏（高频衰减）时均值天然偏低，同样音量的曲子 RMS 才稳定。
+    var timeData = null;
+    var binHz = 21.5;
+    var analysisMode = 'idle'; // idle | live | blocked | failed | silent
+    var silentFrames = 0;
+    var beatEnv = 0;
+    // 按 n 分开缓存：面板条（56）与全屏场（256）会同时逐帧取频谱，
+    // 只存一份会让两者互相覆盖、每帧重建映射表
+    var bandMaps = {};
+    var energy = { bass: 0, mid: 0, high: 0, level: 0, pan: 0, width: 0 };
+
+    // ── 立体声分支 ────────────────────────────────────────────
+    // 单声道频谱拿不到任何方位信息。要还原「左/右」必须真的分离声道：
+    // analyserNode 是透传节点，从它再分出一路 ChannelSplitter → 两个
+    // 分析器，终点接零增益节点。零增益不是偷懒——节点只有挂在通往
+    // destination 的路径上才会被音频图拉取，而 0 增益保证听不见、
+    // 也不会与原路径叠加出 +6dB。
+    var splitter = null;
+    var anaL = null;
+    var anaR = null;
+    var silentGain = null;
+    var lData = null;
+    var rData = null;
+
+    function trackBpm() {
+        var t = state.playlist[state.currentIndex];
+        var b = t && Number(t.bpm);
+        return b && isFinite(b) && b > 20 && b < 400 ? b : 0;
+    }
+
+    function connectAnalyser() {
+        if (analyserMode() !== 'running') return false;
+        if (!analyserSrc) {
+            analyserSrc = analyserCtx.createMediaElementSource(audio);
+            analyserSrc.connect(analyserNode);
+            analyserNode.connect(analyserCtx.destination);
+            buildStereoBranch();
+        }
+        return true;
+    }
+
+    function buildStereoBranch() {
+        if (splitter || !analyserNode) return;
+        try {
+            splitter = analyserCtx.createChannelSplitter(2);
+            anaL = analyserCtx.createAnalyser();
+            anaR = analyserCtx.createAnalyser();
+            // 立体声只要能量差，不需要细分频率：1024 足够，省一半 FFT
+            anaL.fftSize = 1024;
+            anaR.fftSize = 1024;
+            anaL.smoothingTimeConstant = 0.35;
+            anaR.smoothingTimeConstant = 0.35;
+            silentGain = analyserCtx.createGain();
+            silentGain.gain.value = 0;
+            analyserNode.connect(splitter);
+            splitter.connect(anaL, 0);
+            splitter.connect(anaR, 1);
+            anaL.connect(silentGain);
+            anaR.connect(silentGain);
+            silentGain.connect(analyserCtx.destination);
+            lData = new Uint8Array(anaL.frequencyBinCount);
+            rData = new Uint8Array(anaR.frequencyBinCount);
+        } catch (e) {
+            // 单声道源（部分流媒体）拿不到右声道时整条分支作废，频谱照常
+            splitter = null;
+            anaL = anaR = null;
+        }
+    }
+
+    function analyserMode() {
+        return analyserCtx ? analyserCtx.state : 'none';
+    }
+
+    var lastAttachTry = 0;
+
+    function ensureAnalyser() {
+        if (analysisMode === 'live' || analysisMode === 'failed') return;
+        var now = Date.now();
+        if (now - lastAttachTry < 1000) return; // 每帧调用时不要反复 resume()
+        lastAttachTry = now;
+        var win = /** @type {any} */ (window);
+        var Ctx = win.AudioContext || win.webkitAudioContext;
+        if (!Ctx) { analysisMode = 'failed'; return; }
+        try {
+            if (!analyserCtx) {
+                analyserCtx = new Ctx();
+                analyserNode = analyserCtx.createAnalyser();
+                analyserNode.fftSize = FFT_SIZE;
+                // 不在分析器里做时间平滑：下游 MusicVisualizer 已有一套跟 dt 走的
+                // 单极滤波器（k = 1-0.62^(dt*60)），两者级联等于把瞬态压两遍。
+                // 实测（同一曲、同一分析器，只改这一个参数）：
+                //   stc 0.74 → sub 摆幅 0.30 / mid 0.39
+                //   stc 0     → sub 摆幅 0.64 / mid 0.65
+                // 摆幅几乎翻倍，而时间常数仍由下游那套控制，观感不会变慢。
+                analyserNode.smoothingTimeConstant = 0;
+                analyserNode.minDecibels = -92;
+                analyserNode.maxDecibels = -16;
+                freqData = new Uint8Array(analyserNode.frequencyBinCount);
+                timeData = new Uint8Array(FFT_SIZE);
+                binHz = analyserCtx.sampleRate / FFT_SIZE;
+            }
+            var ready = function () {
+                if (analyserMode() !== 'running') { analysisMode = 'blocked'; return; }
+                // 播放器没在播就先不接线：让音频保持元素直连，避免上下文被浏览器
+                // 挂起时把声音一起吞掉
+                if (audio.paused) return;
+                try {
+                    if (connectAnalyser()) analysisMode = 'live';
+                } catch (e) {
+                    analysisMode = 'failed';
+                }
+            };
+            if (analyserCtx.state === 'running') { ready(); return; }
+            // resume() 需要用户激活态；失败不抛错，只保持 suspended
+            var p = analyserCtx.resume();
+            if (p && p.then) p.then(ready).catch(function () { analysisMode = 'blocked'; });
+            else ready();
+        } catch (e) {
+            analysisMode = 'failed';
+        }
+    }
+
+    // 40Hz → 16kHz 等比频带映射。返回的是「小数 bin 边界」而不是整数下标。
+    //
+    // 为什么必须用小数：40Hz 起的第一个倍频程在 4kHz FFT 下只覆盖约 12 个
+    // bin，而这里要切出 62 个输出带。对边界取整会让相邻几十个输出带读到
+    // 同一个 bin —— 低频段变成一串平台，鼓点的包络被量化成方块。
+    // 面积加权重采样把每个输出带写成 [a,b) 区间上的加权平均，阶梯消失，
+    // 代价是每个带多算一两次乘加。
+    function getBandMap(n) {
+        if (bandMaps[n]) return bandMaps[n];
+        var count = freqData ? freqData.length : 2048;
+        var edges = new Float32Array(n + 1);
+        var fMin = 40, fMax = 16000, ratio = fMax / fMin;
+        for (var i = 0; i <= n; i++) {
+            var bin = (fMin * Math.pow(ratio, i / n)) / binHz;
+            if (bin < 1) bin = 1;
+            if (bin > count - 1) bin = count - 1;
+            edges[i] = bin;
+        }
+        bandMaps[n] = edges;
+        return edges;
+    }
+
+    // 单个输出带 = 边界区间上的面积加权平均 + 区间峰值。
+    // 峰值参与混合是刻意的：瞬态（鼓、镲）的能量集中在少数 bin 上，
+    // 纯平均会把它们削掉一半；而纯峰值又会让持续音随噪点乱跳。
+    var bandPeak = 0;
+    function sampleBand(edges, i) {
+        var a = edges[i], b = edges[i + 1];
+        var k0 = Math.floor(a), k1 = Math.ceil(b);
+        var sum = 0, wsum = 0, peak = 0;
+        var last = freqData.length - 1;
+        for (var k = k0; k < k1; k++) {
+            var lo = a > k ? a : k;
+            var hi = b < k + 1 ? b : k + 1;
+            if (hi <= lo) continue;
+            var v = freqData[k > last ? last : k];
+            var w = hi - lo;
+            sum += v * w;
+            wsum += w;
+            if (v > peak) peak = v;
+        }
+        bandPeak = peak;
+        return wsum > 0 ? sum / wsum : 0;
+    }
+
+    // 逐帧去重：频谱与波形各只读一次。现在只有一个消费方，但面板、
+    // 全屏层、未来的歌词动画都会调同一个 analyser，重复读 = 重复 FFT。
+    var lastFreqAt = -1e9;
+    var lastTimeAt = -1e9;
+    var READ_EPS = 3; // ms
+
+    function nowMs() {
+        return (window.performance && performance.now) ? performance.now() : Date.now();
+    }
+
+    // 单个 bin 的整形：动态范围压缩 → 削顶 → 高频显示补偿。
+    // 削顶必须发生在乘补偿之前，否则「每段的上限 = 1/tilt」：tilt 从 1 涨到 3.2，
+    // 第 7 段的天然上限就只剩 0.31，而消费方又按 tilt 均值做反变换，
+    // 上限被永久锁死在 1/3。实测 subBass 0.87 / mid 0.46 / air 0.31，
+    // 八个频段带着八条不同的天花板进着色器，着色器却假设它们都是 0..1。
+    //
+    // 单独成函数是为了让测量工具能调到这份实现本身，
+    // 而不是在测试里复刻一份走样的副本。
+    function shapeBin(norm, i, n) {
+        var base = Math.pow(norm, 0.82) * 1.15;
+        if (base > 1) base = 1;
+        return base * (1 + Math.pow(i / n, 1.4) * 2.6);
+    }
+
+    function fillLive(out, n) {
+        var t0 = nowMs();
+        if (t0 - lastFreqAt >= READ_EPS) {
+            analyserNode.getByteFrequencyData(freqData);
+            lastFreqAt = t0;
+        }
+        var edges = getBandMap(n);
+        var zero = true;
+        var lo = 0, mi = 0, hi = 0, total = 0;
+        // 低频取到 26%（约 40–160Hz），取更窄会把「低音」算成次声，人声曲里几乎恒为 0
+        var iLo = n * 0.26, iMid = n * 0.60;
+        for (var i = 0; i < n; i++) {
+            var avg = sampleBand(edges, i);
+            var peak = bandPeak;
+            if (peak > 0) zero = false;
+            var norm = (peak * 0.62 + avg * 0.38) / 255;
+            var val = shapeBin(norm, i, n);
+            out[i] = val;
+            total += val;
+            if (i < iLo) lo += val;
+            else if (i < iMid) mi += val;
+            else hi += val;
+        }
+        // 静默失败判定：能播但全频段恒为 0，连续约 2s 才认定，避免间奏误伤
+        if (zero && !audio.paused) {
+            silentFrames++;
+            if (silentFrames > 120) analysisMode = 'silent';
+        } else {
+            silentFrames = 0;
+        }
+        // 频段均值天然偏低，做一次轻度压缩让驱动信号有可用幅度
+        energy.bass = Math.min(1, Math.pow(lo / Math.max(1, iLo), 0.75) * 1.5);
+        energy.mid = Math.min(1, Math.pow(mi / Math.max(1, iMid - iLo), 0.75) * 1.5);
+        energy.high = Math.min(1, Math.pow(hi / Math.max(1, n - iMid), 0.75) * 1.7);
+        // 总能量改用时域 RMS（真响度）。原先是频谱均值，会被「频谱形状」带偏：
+        // 高频衰减的曲子均值天然偏低，同样响度下 level 能差一倍。
+        // 这一点对 idle 让位、uEnergy 尖刺、beatEnv 三个下游都直接生效。
+        // 校准：流行乐字节域 RMS 约 0.05–0.25，×4 后开 0.7 次方压到 0..1。
+        if (timeData) {
+            var t1 = nowMs();
+            if (t1 - lastTimeAt >= READ_EPS) {
+                analyserNode.getByteTimeDomainData(timeData);
+                lastTimeAt = t1;
+            }
+            var sq = 0;
+            for (var ti = 0; ti < timeData.length; ti++) {
+                var dv = (timeData[ti] - 128) / 128;
+                sq += dv * dv;
+            }
+            var rms = Math.sqrt(sq / timeData.length);
+            energy.level = Math.min(1, Math.pow(rms * 4, 0.7));
+        } else {
+            energy.level = Math.min(1, Math.pow(total / n, 0.78) * 1.6);
+        }
+        readStereo();
+        return energy.level;
+    }
+
+    // 立体声：左右能量差就是听觉定位里最硬的一条线索（ILD）。
+    // 取 200Hz 以上做统计——低频在真实录音里本来就接近单声道，
+    // 把它们算进去会把宽度恒久地拉到 0。
+    var STEREO_FROM = 4;
+    function readStereo() {
+        if (!anaL || !lData) return;
+        anaL.getByteFrequencyData(lData);
+        anaR.getByteFrequencyData(rData);
+        var sl = 0, sr = 0;
+        for (var i = STEREO_FROM; i < lData.length; i++) {
+            sl += lData[i];
+            sr += rData[i];
+        }
+        var tot = sl + sr;
+        if (tot < 64) {
+            // 静音/单声道：慢慢回中，不要突然跳到 0
+            energy.pan *= 0.9;
+            energy.width *= 0.9;
+            return;
+        }
+        // 单声道源（channelCount=1）会把右声道的总和压成 0，此时
+        // 「左右能量差」恒为满偏，画面会永久倒向一边。任一侧低到
+        // 总量 2% 以下就当成「没有方位信息」，而不是「极左/极右」。
+        if (sl < tot * 0.02 || sr < tot * 0.02) {
+            energy.pan *= 0.9;
+            energy.width *= 0.9;
+            return;
+        }
+        energy.pan = Math.max(-1, Math.min(1, (sr - sl) / tot));
+        energy.width = Math.min(1, Math.abs(sr - sl) / tot * 2.2);
+    }
+
+    // 合成频谱：确定性正弦叠加 + 节拍包络。与音频内容无关，但形态稳定、零风险。
+    function fillSynth(out, n) {
+        var t = audio.currentTime || 0;
+        var bpm = trackBpm() || 128;
+        var beatPos = t * bpm / 60;
+        var phase = beatPos - Math.floor(beatPos);
+        var pulse = Math.exp(-phase * 6.2);
+        for (var i = 0; i < n; i++) {
+            var x = i / n;
+            var base = 0.16 + 0.44 * Math.pow(1 - x, 0.75);
+            var w1 = Math.sin(t * (2.1 + i * 0.37) + i * 1.7);
+            var w2 = Math.sin(t * (5.3 + i * 0.11) + i * 0.9);
+            var amp = base * (0.62 + 0.24 * w1 + 0.14 * w2);
+            amp *= 0.74 + 0.5 * pulse * (1 - x * 0.55);
+            if (amp > 1) amp = 1;
+            // 与 fillLive 输出同一份契约：先削顶、再乘显示补偿，由消费方除回去。
+            // 原先这里直接给 0..1 的裸值，消费方却照样除 tilt，
+            // 于是降级到合成频谱时高频被压到三分之一——两条产出通路各说各话，
+            // 画面在「有没有 analyser」之间悄悄变了样。顺序也必须一致，
+            // 否则乘完再削顶会把各段的上限重新拉开。
+            amp *= 1 + Math.pow(x, 1.4) * 2.6;
+            out[i] = amp;
+        }
+        energy.bass = 0.30 + 0.45 * pulse;
+        energy.mid = 0.42 + 0.14 * Math.sin(t * 1.7);
+        energy.high = 0.34 + 0.12 * Math.sin(t * 3.1 + 1.2);
+        energy.level = 0.38 + 0.24 * pulse;
+        return energy.level;
+    }
+
+    // 统一出口：真数据优先，任一环节不可用就切合成。调用方无需关心来源。
+    function getSpectrum(out) {
+        var n = out.length;
+        if (audio.paused && analysisMode !== 'live') {
+            for (var z = 0; z < n; z++) out[z] = 0;
+            beatEnv *= 0.9;
+            energy.bass *= 0.88; energy.mid *= 0.88; energy.high *= 0.88; energy.level *= 0.88;
+            energy.pan *= 0.9; energy.width *= 0.9;
+            return analysisMode;
+        }
+        if (analysisMode === 'idle' || analysisMode === 'blocked') ensureAnalyser();
+
+        var bass = 0;
+        if (analysisMode === 'live' && analyserNode && freqData) {
+            bass = fillLive(out, n);
+        } else {
+            bass = fillSynth(out, n);
+        }
+        beatEnv = bass > beatEnv ? bass : beatEnv * 0.93;
+        return analysisMode === 'live' ? 'live' : 'synth';
+    }
+
+    // 0..1 的节拍脉冲：填了 bpm 用精确相位，否则用低频能量包络（表盘标 EST.）。
+    function getBeat() {
+        var bpm = trackBpm();
+        if (bpm) {
+            var phase = ((audio.currentTime || 0) * bpm / 60) % 1;
+            return Math.exp(-phase * 5.5);
+        }
+        return Math.min(1, beatEnv * 1.15);
+    }
+
+    function getBpmInfo() {
+        var bpm = trackBpm();
+        return { value: bpm || null, exact: !!bpm };
     }
 
     // ── Public API ───────────────────────────────────────────
@@ -662,7 +1325,31 @@ const managerConfigStr = JSON.stringify({
         seek: seek,
         seekToTime: seekToTime,
         playTrackByIndex: playTrackByIndex,
-        loadTrack: loadTrack
+        loadTrack: loadTrack,
+        // ── 可视化数据接口 ──
+        // getSpectrum(Float32Array) 原地写入频谱，返回 'live' | 'synth'。
+        // 输出的不是 0..1，而是「0..1 的归一化值 × 显示补偿 tilt」：低频段约 0..1，
+        // 高频段可到 3.2。消费方（可视化）按段除以 tilt 均值还原——
+        // 因为地形的高度按频率分区，本来就要按段归一，逐 bin 的等比缩放在这里没有意义。
+        // 两条产出通路（live / synth）必须输出同一份契约，否则降级时画面会悄悄变样。
+        // 每帧调用不分配对象，可直接在 rAF 循环里用。
+        getSpectrum: getSpectrum,
+        // 仅供 tools/mvz-lab 测量前台整形曲线，不参与播放逻辑
+        __shapeBin: shapeBin,
+        getBeat: getBeat,
+        getBpmInfo: getBpmInfo,
+        // 三频段能量，与 getSpectrum 同一次计算的结果，不额外开销
+        getEnergy: function () {
+            return {
+                bass: energy.bass, mid: energy.mid, high: energy.high, level: energy.level,
+                // 立体声：pan ∈ [-1,1]（负=偏左），width ∈ [0,1]（0=单声道）
+                pan: energy.pan, width: energy.width,
+                stereo: !!(anaL && lData)
+            };
+        },
+        // 封面双色（HSL 分量），供可视化构建三段调色；无封面时为 null
+        getPalette: function () { return lastPalette; },
+        getAudioElement: function () { return audio; }
     };
 })();
 </script>

@@ -9,10 +9,8 @@ export const en: Translation = {
 	[Key.searchNoResults]: "No results found.",
 	[Key.searchTypeSomething]: "Type something to search...",
 	[Key.searchLoading]: "Searching...",
-	[Key.searchSummary]: "Summary",
 	[Key.searchContent]: "Content",
 	[Key.searchViewMore]: "View more results ({count} more)",
-	[Key.other]: "Other",
 
 	// Navbar menu groups
 	[Key.navArticles]: "Articles",
@@ -27,7 +25,6 @@ export const en: Translation = {
 	[Key.allCategories]: "All Categories",
 	[Key.allTags]: "All Tags",
 	[Key.allSeries]: "All Series",
-	[Key.recentPosts]: "Recent Posts",
 	[Key.postList]: "Post List",
 	[Key.tableOfContents]: "Table of Contents",
 	[Key.tocEmpty]: "No table of contents on this page",
@@ -41,10 +38,7 @@ export const en: Translation = {
 	[Key.dynamicNoResults]: "No matching moments found",
 	[Key.dynamicLoading]: "Loading moments",
 	[Key.dynamicAllYears]: "All years",
-	[Key.dynamicLoadMore]: "Load more",
-	[Key.dynamicBackToList]: "Back to moments",
 	[Key.dynamicProfile]: "View {name}'s profile",
-	[Key.dynamicPermalink]: "Permalink to this moment",
 	[Key.dynamicCollapseGallery]: "Collapse",
 	[Key.dynamicViewOriginal]: "View full size",
 	[Key.dynamicPreviousImage]: "Previous image",
@@ -63,12 +57,15 @@ export const en: Translation = {
 	[Key.musicFailedLyrics]: "Failed to load lyrics",
 	[Key.musicNoSongs]: "No songs",
 	[Key.musicError]: "Player Error",
+	[Key.musicVisualizer]: "Visualizer",
 	[Key.musicPlay]: "Play",
 	[Key.musicPause]: "Pause",
 	[Key.musicProgress]: "Playback Progress",
 	[Key.musicCover]: "Cover",
 	[Key.musicNoCover]: "No cover available",
-	[Key.musicAudioPlayer]: "Audio Player",
+	[Key.musicClose]: "Close player",
+	[Key.musicLike]: "Add to favorites",
+	[Key.musicUnlike]: "Remove from favorites",
 
 	// Announcement
 	[Key.announcement]: "Announcement",
@@ -105,7 +102,6 @@ export const en: Translation = {
 	[Key.guestbook]: "Guestbook",
 	[Key.guestbookDescription]:
 		"Welcome to leave your mark here, share your thoughts and suggestions",
-	[Key.untitled]: "Untitled",
 	[Key.uncategorized]: "Uncategorized",
 	[Key.noTags]: "No Tags",
 
@@ -135,7 +131,6 @@ export const en: Translation = {
 	[Key.bangumi]: "Bangumi",
 
 	// Bangumi Filter and Status Text
-	[Key.bangumiTitle]: "My Bangumi",
 	[Key.bangumiSubtitle]: "Record my ACG journey",
 	[Key.bangumiFilterAll]: "All",
 	[Key.bangumiFilterWatched]: "Watched",
@@ -175,15 +170,6 @@ export const en: Translation = {
 	[Key.bangumiFetchError]: "Bangumi Data Fetch Failed",
 	[Key.bangumiFetchErrorDesc]:
 		"Failed to fetch data from Bangumi API during build. This page is temporarily unavailable.",
-	[Key.bangumiUsername]: "Username",
-	[Key.bangumiApi]: "API",
-	[Key.bangumiConfigTip]:
-		"Tip: Please set the correct Bangumi username in the page configuration",
-	[Key.bangumiPrevPage]: "Previous",
-	[Key.bangumiNextPage]: "Next",
-	[Key.bangumiCurrentPage]: "Page",
-	[Key.bangumiTotalPages]: "of",
-	[Key.bangumiPage]: "page",
 
 	// Bangumi Categories
 	[Key.bangumiCategoryBook]: "Book",
@@ -194,8 +180,6 @@ export const en: Translation = {
 
 	// Bangumi Data Update
 	[Key.bangumiLastUpdated]: "Data updated on",
-	[Key.bangumiUpdatedAt]: "Build time",
-	[Key.bangumiDataStatic]: "Static data",
 
 	// VNDB
 	[Key.vndb]: "VNDB",
@@ -238,27 +222,19 @@ export const en: Translation = {
 
 	// Anime Tracking - Shared components
 	[Key.animeTotal]: "Total",
-	[Key.animeAverageRating]: "Avg Rating",
 	[Key.animeSearch]: "Search anime...",
-	[Key.animeAllTypes]: "All",
-	[Key.animeTV]: "TV Anime",
-	[Key.animeMovie]: "Movie",
 	[Key.animeRatingDesc]: "Highest Rating",
 	[Key.animeRatingAsc]: "Lowest Rating",
 	[Key.animeDateDesc]: "Newest",
 	[Key.animeDateAsc]: "Oldest",
 	[Key.animeNoResults]: "No matching anime found",
 	[Key.animeLastUpdated]: "Data updated on",
-	[Key.animeEpStatus]: "Progress",
 	[Key.animeViewDetails]: "View Details",
 	[Key.animeBilibiliAvg]: "Bilibili Avg",
 	[Key.animeNoOverview]: "No synopsis available",
 	[Key.animeClose]: "Close",
 	[Key.animeSynopsis]: "Synopsis",
 	[Key.animeWatchNow]: "Watch Now",
-	[Key.animeAllWithCount]: "All ({count})",
-	[Key.animeTVWithCount]: "TV ({count})",
-	[Key.animeMovieWithCount]: "Movie ({count})",
 	[Key.animeTypeAnime]: "Anime",
 	[Key.animeTypeMovie]: "Movie",
 	[Key.animeTypeDocumentary]: "Documentary",
@@ -297,14 +273,9 @@ export const en: Translation = {
 	[Key.malSeasonFall]: "Fall",
 
 	// Pagination
-	[Key.paginationFirst]: "First",
 	[Key.paginationPrev]: "Previous",
 	[Key.paginationNext]: "Next",
-	[Key.paginationLast]: "Last",
 	[Key.paginationPage]: "Page",
-	[Key.paginationOf]: "of",
-	[Key.paginationTotal]: ", Total",
-	[Key.paginationRecords]: " records",
 	[Key.paginationJump]: "Jump to page",
 
 	// 404 Page
@@ -350,16 +321,10 @@ export const en: Translation = {
 	[Key.lastModifiedOutdated]: "Some content may be outdated",
 	[Key.lastModifiedDaysAgo]: "{days} days ago",
 	[Key.year]: "year",
-	[Key.month]: "month",
-	[Key.day]: "day",
-	[Key.hour]: "hour",
-	[Key.minute]: "minute",
-	[Key.second]: "second",
 
 	// Page Views Statistics
 	[Key.pageViews]: "Views",
 	[Key.pageViewsLoading]: "Loading...",
-	[Key.pageViewsError]: "Stats unavailable",
 
 	// Pinned
 	[Key.pinned]: "Pinned",
@@ -425,13 +390,8 @@ export const en: Translation = {
 	[Key.sponsorTitle]: "Support Me",
 	[Key.sponsorDescription]:
 		"If my content has been helpful to you, welcome to sponsor me through the following methods. Your support is the driving force for my continued creation!",
-	[Key.sponsorMethods]: "Payment Methods",
 	[Key.sponsorList]: "Sponsors",
 	[Key.sponsorEmpty]: "No sponsors yet",
-	[Key.sponsorAmount]: "Amount",
-	[Key.sponsorDate]: "Date",
-	[Key.sponsorMessage]: "Message",
-	[Key.sponsorAnonymous]: "Anonymous",
 	[Key.scanToSponsor]: "Scan to Sponsor",
 	[Key.sponsorGoTo]: "Go to Sponsor",
 	[Key.sponsorButton]: "Support & Share",
@@ -445,7 +405,6 @@ export const en: Translation = {
 	// Site Statistics
 	[Key.siteStats]: "Site Statistics",
 	[Key.siteStatsPostCount]: "Posts",
-	[Key.siteStatsDynamicCount]: "Moments",
 	[Key.siteStatsCategoryCount]: "Categories",
 	[Key.siteStatsTagCount]: "Tags",
 	[Key.siteStatsTotalWords]: "Total Words",
@@ -501,16 +460,11 @@ export const en: Translation = {
 	[Key.scanToRead]: "Scan to Read",
 
 	// Code Block Collapsible Configuration
-	[Key.codeCollapsibleShowMore]: "Show more",
-	[Key.codeCollapsibleShowLess]: "Show less",
-	[Key.codeCollapsibleExpanded]: "Code block expanded",
-	[Key.codeCollapsibleCollapsed]: "Code block collapsed",
 
 	// Gallery Page
 	[Key.gallery]: "Gallery",
 	[Key.galleryDescription]: "Capturing beautiful moments in life",
 	[Key.galleryPhotos]: "photos",
-	[Key.galleryAlbums]: "albums",
 	[Key.galleryNoAlbums]: "No albums yet",
 	[Key.galleryBackToAlbums]: "Back to albums",
 	[Key.galleryEnterAlbum]: "Enter album",
@@ -540,4 +494,20 @@ export const en: Translation = {
 	[Key.exitImmersiveReading]: "Exit Immersive Reading",
 	[Key.tocExpand]: "Expand directory",
 	[Key.tocCollapse]: "Collapse directory",
+
+	// Visitor Greeting
+	[Key.greetingDawn]: "Almost dawn",
+	[Key.greetingMorning]: "Good morning",
+	[Key.greetingNoon]: "Good afternoon",
+	[Key.greetingAfternoon]: "Good afternoon",
+	[Key.greetingEvening]: "Good evening",
+	[Key.greetingNight]: "Good evening",
+	[Key.greetingLateNight]: "Burning the midnight oil",
+	[Key.greetingMsg1]: "Make yourself at home, have a look around.",
+	[Key.greetingMsg2]: "Hope you find something you like here.",
+	[Key.greetingMsg3]: "Grab a drink and take your time.",
+	[Key.greetingMsg4]: "Long time no see. How have you been?",
+	[Key.greetingFirstVisit]: "First time here — welcome",
+	[Key.greetingVisitCount]: "Visit #{count}",
+	[Key.greetingClose]: "Dismiss greeting",
 };

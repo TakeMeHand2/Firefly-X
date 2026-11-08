@@ -26,12 +26,15 @@ const pages = resolvePageToggles({
 	// 书签导航页面开关
 	booknav: true,
 	// 哔哩哔哩追番页面开关
-	bilibili: false,
+	bilibili: true,
 	// 番组计划页面开关
+	// 关闭原因：本机未查到 Bangumi 账号，开启会显示模板作者的数据。注册后填入 bangumi.userId 再打开
 	bangumi: false,
 	// VNDB页面开关
+	// 关闭原因同上，注册后填入 vndb.userId 再打开
 	vndb: false,
 	// MyAnimeList页面开关
+	// 关闭原因同上，注册后填入 mal.username 与 clientId 再打开
 	mal: false,
 
 	// ── 关于 (About) ──────────────────────────────────
@@ -42,33 +45,26 @@ const pages = resolvePageToggles({
 
 export const siteConfig: SiteConfig = {
 	// 站点标题
-	title: "Firefly",
+	title: "序号的小站",
 
 	// 站点副标题
-	subtitle: "Demo site",
+	subtitle: "记录与碎念",
 
 	// 站点 URL
-	site_url: "https://firefly.cuteleaf.cn",
+	site_url: "https://954555.xyz",
 
 	// 站点描述
 	description:
-		"Firefly 是一款基于 Astro 框架和 Fuwari 模板开发的清新美观且现代化个人博客主题模板，专为技术爱好者和内容创作者设计。该主题融合了现代 Web 技术栈，提供了丰富的功能模块和高度可定制的界面，让您能够轻松打造出专业且美观的个人博客网站。",
+		"序号的小站，记录与碎念。这里存放日常随笔、技术笔记与生活片段——我本可以忍受黑暗，若我不曾见过太阳。",
 
 	// 站点关键词
-	keywords: [
-		"Firefly",
-		"Fuwari",
-		"Astro",
-		"ACGN",
-		"博客",
-		"技术博客",
-		"静态博客",
-	],
+	keywords: ["序号", "序号的小站", "个人博客", "记录", "碎念", "随笔", "技术笔记"],
 
 	// 主题色
 	themeColor: {
 		// 主题色的默认色相，范围从 0 到 360。例如：红色：0，青色：200，蓝绿色：250，粉色：345
-		hue: 165,
+		// 285 为紫罗兰，取自头像主色相（约 306）后略偏冷，长时间阅读更稳
+		hue: 285,
 		// 默认模式："light" 亮色，"dark" 暗色，"system" 跟随系统
 		defaultMode: "system",
 	},
@@ -90,12 +86,14 @@ export const siteConfig: SiteConfig = {
 	// 如果启用了OpenGraph图片功能，数组中需要包含png格式的favicon图标
 	favicon: [
 		{
-			// 图标文件路径
-			src: "/favicon/firefly-32.png",
-			// 可选，指定主题 'light' | 'dark'
-			// theme: "light",
-			// 可选，图标大小
-			// sizes: "32x32",
+			// 动态 favicon（GIF，浏览器标签页会播放动画；Chrome 仅显示首帧，Firefox/部分浏览器支持动图）
+			src: "/favicon/favicon.gif",
+			sizes: "32x32",
+		},
+		{
+			// 静态 PNG，供 OpenGraph 图与不支持动图的场景回退
+			src: "/favicon/favicon-32.png",
+			sizes: "32x32",
 		},
 	],
 
@@ -132,7 +130,7 @@ export const siteConfig: SiteConfig = {
 	},
 
 	// 站点开始日期，用于统计运行天数
-	siteStartDate: "2025-01-01",
+	siteStartDate: "2026-11-01",
 
 	// 站点时区（IANA 时区字符串），用于格式化bangumi、rss里的构建日期时间等等..
 	// 示例："Asia/Shanghai", "UTC", 如果为空，则按照构建服务器的时区进行时区转换
@@ -262,12 +260,13 @@ export const siteConfig: SiteConfig = {
 	// ── Bilibili配置 ──────────────────────────────────
 	bilibili: {
 		// 你的 Bilibili 用户 UID
-		uid: "38932988",
+		uid: "3494377393490309",
 	},
 
 	// ── 番组计划bangumi配置 ──────────────────────────────────
 	bangumi: {
 		// Bangumi用户ID
+		// TODO 当前为模板作者 ID，请替换为你自己的
 		userId: "1143164",
 		// 数据模式：static=构建时获取，dynamic=客户端实时获取
 		// static 模式在构建时获取数据并静态渲染，部署后数据不更新
@@ -292,6 +291,7 @@ export const siteConfig: SiteConfig = {
 	// ── VNDB配置 ──────────────────────────────────
 	vndb: {
 		// VNDB 用户 ID
+		// TODO 当前为模板作者 ID，请替换为你自己的
 		userId: "u358128",
 		// 数据模式：static=构建时获取，dynamic=客户端实时获取
 		// static 模式在构建时获取数据并静态渲染，部署后数据不更新
@@ -312,6 +312,7 @@ export const siteConfig: SiteConfig = {
 	// ── MyAnimeList配置 ──────────────────────────────────
 	mal: {
 		// MyAnimeList 用户名（列表需为公开状态，私密列表无法读取）
+		// TODO 当前为模板作者用户名，请替换为你自己的
 		username: "cuteleaf",
 		// MyAnimeList Client ID，在 https://myanimelist.net/apiconfig 注册免费应用后获取
 		clientId: "	0ef34371450f9c6c809deaadec6aa8f3",

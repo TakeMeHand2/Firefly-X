@@ -9,10 +9,8 @@ export const ja: Translation = {
 	[Key.searchNoResults]: "結果が見つかりません。",
 	[Key.searchTypeSomething]: "検索キーワードを入力してください。",
 	[Key.searchLoading]: "検索中...",
-	[Key.searchSummary]: "摘要",
 	[Key.searchContent]: "内容",
 	[Key.searchViewMore]: "さらに結果を表示 ({count} 件)",
-	[Key.other]: "その他",
 
 	// ナビバーメニューグループ
 	[Key.navArticles]: "記事",
@@ -27,7 +25,6 @@ export const ja: Translation = {
 	[Key.allCategories]: "すべてのカテゴリ",
 	[Key.allTags]: "すべてのタグ",
 	[Key.allSeries]: "すべてのシリーズ",
-	[Key.recentPosts]: "最近の投稿",
 	[Key.postList]: "投稿リスト",
 	[Key.tableOfContents]: "目次",
 	[Key.tocEmpty]: "このページには目次がありません",
@@ -41,10 +38,7 @@ export const ja: Translation = {
 	[Key.dynamicNoResults]: "一致する投稿がありません",
 	[Key.dynamicLoading]: "投稿を読み込んでいます",
 	[Key.dynamicAllYears]: "すべての年",
-	[Key.dynamicLoadMore]: "さらに読み込む",
-	[Key.dynamicBackToList]: "投稿一覧へ戻る",
 	[Key.dynamicProfile]: "{name}のプロフィールを見る",
-	[Key.dynamicPermalink]: "この投稿への固定リンク",
 	[Key.dynamicCollapseGallery]: "閉じる",
 	[Key.dynamicViewOriginal]: "拡大表示",
 	[Key.dynamicPreviousImage]: "前の画像",
@@ -63,12 +57,15 @@ export const ja: Translation = {
 	[Key.musicFailedLyrics]: "歌詞の読み込みに失敗しました",
 	[Key.musicNoSongs]: "曲なし",
 	[Key.musicError]: "プレーヤーエラー",
+	[Key.musicVisualizer]: "オーディオビジュアライザー",
 	[Key.musicPlay]: "再生",
 	[Key.musicPause]: "一時停止",
 	[Key.musicProgress]: "再生の進捗",
 	[Key.musicCover]: "カバー",
 	[Key.musicNoCover]: "カバーなし",
-	[Key.musicAudioPlayer]: "オーディオプレーヤー",
+	[Key.musicClose]: "プレーヤーを閉じる",
+	[Key.musicLike]: "お気に入りに追加",
+	[Key.musicUnlike]: "お気に入りから削除",
 
 	// お知らせ
 	[Key.announcement]: "お知らせ",
@@ -104,7 +101,6 @@ export const ja: Translation = {
 	[Key.guestbook]: "ゲストブック",
 	[Key.guestbookDescription]:
 		"ここに足跡を残して、あなたの考えや提案を共有してください",
-	[Key.untitled]: "無題",
 	[Key.uncategorized]: "未分類",
 	[Key.noTags]: "タグなし",
 
@@ -134,7 +130,6 @@ export const ja: Translation = {
 	[Key.bangumi]: "Bangumi",
 
 	// バングミフィルターと状態文本
-	[Key.bangumiTitle]: "私のBangumi",
 	[Key.bangumiSubtitle]: "私の二次元の旅を記録する",
 	[Key.bangumiFilterAll]: "すべて",
 	[Key.bangumiFilterWatched]: "見た",
@@ -174,15 +169,6 @@ export const ja: Translation = {
 	[Key.bangumiFetchError]: "Bangumi データ取得失敗",
 	[Key.bangumiFetchErrorDesc]:
 		"ビルド時に Bangumi API からのデータ取得に失敗しました。このページは一時的に利用できません。",
-	[Key.bangumiUsername]: "ユーザー名",
-	[Key.bangumiApi]: "API",
-	[Key.bangumiConfigTip]:
-		"ヒント：ページ設定で正しいBangumiユーザー名を設定してください",
-	[Key.bangumiPrevPage]: "前へ",
-	[Key.bangumiNextPage]: "次へ",
-	[Key.bangumiCurrentPage]: "ページ",
-	[Key.bangumiTotalPages]: "の",
-	[Key.bangumiPage]: "ページ",
 
 	// バングミカテゴリ
 	[Key.bangumiCategoryBook]: "本",
@@ -193,8 +179,6 @@ export const ja: Translation = {
 
 	// バングミデータ更新
 	[Key.bangumiLastUpdated]: "データ更新日",
-	[Key.bangumiUpdatedAt]: "ビルド時間",
-	[Key.bangumiDataStatic]: "静的データ",
 
 	// VNDB
 	[Key.vndb]: "VNDB",
@@ -237,27 +221,19 @@ export const ja: Translation = {
 
 	// 追番 - 共通コンポーネント
 	[Key.animeTotal]: "合計",
-	[Key.animeAverageRating]: "平均評価",
 	[Key.animeSearch]: "アニメを検索...",
-	[Key.animeAllTypes]: "すべて",
-	[Key.animeTV]: "TV アニメ",
-	[Key.animeMovie]: "映画",
 	[Key.animeRatingDesc]: "評価が高い順",
 	[Key.animeRatingAsc]: "評価が低い順",
 	[Key.animeDateDesc]: "新しい順",
 	[Key.animeDateAsc]: "古い順",
 	[Key.animeNoResults]: "一致するアニメが見つかりません",
 	[Key.animeLastUpdated]: "データ更新日",
-	[Key.animeEpStatus]: "進捗",
 	[Key.animeViewDetails]: "詳細を見る",
 	[Key.animeBilibiliAvg]: "Bilibili 平均",
 	[Key.animeNoOverview]: "あらすじなし",
 	[Key.animeClose]: "閉じる",
 	[Key.animeSynopsis]: "あらすじ",
 	[Key.animeWatchNow]: "今すぐ視聴",
-	[Key.animeAllWithCount]: "すべて ({count})",
-	[Key.animeTVWithCount]: "TV ({count})",
-	[Key.animeMovieWithCount]: "映画 ({count})",
 	[Key.animeTypeAnime]: "アニメ",
 	[Key.animeTypeMovie]: "映画",
 	[Key.animeTypeDocumentary]: "ドキュメンタリー",
@@ -296,14 +272,9 @@ export const ja: Translation = {
 	[Key.malSeasonFall]: "秋",
 
 	// ページネーション
-	[Key.paginationFirst]: "最初",
 	[Key.paginationPrev]: "前へ",
 	[Key.paginationNext]: "次へ",
-	[Key.paginationLast]: "最後",
 	[Key.paginationPage]: "",
-	[Key.paginationOf]: "ページ、全",
-	[Key.paginationTotal]: "ページ、合計",
-	[Key.paginationRecords]: "件",
 	[Key.paginationJump]: "指定ページへ移動",
 
 	// 404ページ
@@ -347,16 +318,10 @@ export const ja: Translation = {
 	[Key.lastModifiedOutdated]: "一部の内容が古くなっている可能性があります",
 	[Key.lastModifiedDaysAgo]: "{days}日前",
 	[Key.year]: "年",
-	[Key.month]: "月",
-	[Key.day]: "日",
-	[Key.hour]: "時",
-	[Key.minute]: "分",
-	[Key.second]: "秒",
 
 	// ページビュー統計
 	[Key.pageViews]: "閲覧数",
 	[Key.pageViewsLoading]: "読み込み中...",
-	[Key.pageViewsError]: "統計利用不可",
 
 	// ピン留め
 	[Key.pinned]: "ピン留め",
@@ -422,13 +387,8 @@ export const ja: Translation = {
 	[Key.sponsorTitle]: "サポート",
 	[Key.sponsorDescription]:
 		"私のコンテンツがあなたの役に立ったなら、以下の方法で私をスポンサーしてください。あなたのサポートは私の継続的な創作の原動力です！",
-	[Key.sponsorMethods]: "支払い方法",
 	[Key.sponsorList]: "スポンサーリスト",
 	[Key.sponsorEmpty]: "スポンサー記録なし",
-	[Key.sponsorAmount]: "金額",
-	[Key.sponsorDate]: "日付",
-	[Key.sponsorMessage]: "メッセージ",
-	[Key.sponsorAnonymous]: "匿名",
 	[Key.scanToSponsor]: "スキャンしてスポンサー",
 	[Key.sponsorGoTo]: "スポンサーへ",
 	[Key.sponsorButton]: "サポートと共有",
@@ -442,7 +402,6 @@ export const ja: Translation = {
 	// サイト統計
 	[Key.siteStats]: "サイト統計",
 	[Key.siteStatsPostCount]: "記事",
-	[Key.siteStatsDynamicCount]: "投稿",
 	[Key.siteStatsCategoryCount]: "カテゴリー",
 	[Key.siteStatsTagCount]: "タグ",
 	[Key.siteStatsTotalWords]: "総文字数",
@@ -498,16 +457,11 @@ export const ja: Translation = {
 	[Key.scanToRead]: "QRコードで読む",
 
 	// コードブロック折りたたみ設定
-	[Key.codeCollapsibleShowMore]: "展開する",
-	[Key.codeCollapsibleShowLess]: "折りたたむ",
-	[Key.codeCollapsibleExpanded]: "コードブロックが展開されました",
-	[Key.codeCollapsibleCollapsed]: "コードブロックが折りたたまれました",
 
 	// ギャラリーページ
 	[Key.gallery]: "ギャラリー",
 	[Key.galleryDescription]: "人生の美しい瞬間を記録する",
 	[Key.galleryPhotos]: "枚の写真",
-	[Key.galleryAlbums]: "冊のアルバム",
 	[Key.galleryNoAlbums]: "アルバムがありません",
 	[Key.galleryBackToAlbums]: "アルバム一覧に戻る",
 	[Key.galleryEnterAlbum]: "アルバムを見る",
@@ -537,4 +491,20 @@ export const ja: Translation = {
 	[Key.exitImmersiveReading]: "没入型リーディングを終了する",
 	[Key.tocExpand]: "目錄を開く",
 	[Key.tocCollapse]: "目錄をたたむ",
+
+	// 訪問者への挨拶
+	[Key.greetingDawn]: "もうすぐ夜明けです",
+	[Key.greetingMorning]: "おはようございます",
+	[Key.greetingNoon]: "こんにちは",
+	[Key.greetingAfternoon]: "こんにちは",
+	[Key.greetingEvening]: "こんばんは",
+	[Key.greetingNight]: "こんばんは",
+	[Key.greetingLateNight]: "夜更かしですね",
+	[Key.greetingMsg1]: "どうぞごゆっくり、見ていってください。",
+	[Key.greetingMsg2]: "気になる記事が見つかると嬉しいです。",
+	[Key.greetingMsg3]: "お茶でも飲みながら、のんびりどうぞ。",
+	[Key.greetingMsg4]: "お久しぶりです、お元気でしたか？",
+	[Key.greetingFirstVisit]: "はじめまして、ようこそ",
+	[Key.greetingVisitCount]: "{count} 回目の訪問",
+	[Key.greetingClose]: "挨拶を閉じる",
 };

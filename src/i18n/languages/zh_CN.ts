@@ -9,10 +9,8 @@ export const zh_CN: Translation = {
 	[Key.searchNoResults]: "找不到相关结果。",
 	[Key.searchTypeSomething]: "请输入搜索关键词。",
 	[Key.searchLoading]: "正在搜索...",
-	[Key.searchSummary]: "摘要",
 	[Key.searchContent]: "内容",
 	[Key.searchViewMore]: "查看更多结果 ({count} 个更多)",
-	[Key.other]: "其他",
 
 	// 导航栏菜单分组
 	[Key.navArticles]: "文章",
@@ -27,7 +25,6 @@ export const zh_CN: Translation = {
 	[Key.allCategories]: "全部分类",
 	[Key.allTags]: "全部标签",
 	[Key.allSeries]: "全部系列",
-	[Key.recentPosts]: "最新文章",
 	[Key.postList]: "文章列表",
 	[Key.tableOfContents]: "文章目录",
 	[Key.tocEmpty]: "当前页面没有目录",
@@ -41,10 +38,7 @@ export const zh_CN: Translation = {
 	[Key.dynamicNoResults]: "没有找到匹配的动态",
 	[Key.dynamicLoading]: "正在加载动态",
 	[Key.dynamicAllYears]: "全部年份",
-	[Key.dynamicLoadMore]: "加载更多",
-	[Key.dynamicBackToList]: "返回动态列表",
 	[Key.dynamicProfile]: "查看 {name} 的资料",
-	[Key.dynamicPermalink]: "此动态的固定链接",
 	[Key.dynamicCollapseGallery]: "收起",
 	[Key.dynamicViewOriginal]: "查看大图",
 	[Key.dynamicPreviousImage]: "上一张图片",
@@ -63,12 +57,15 @@ export const zh_CN: Translation = {
 	[Key.musicFailedLyrics]: "歌词加载失败",
 	[Key.musicNoSongs]: "暂无歌曲",
 	[Key.musicError]: "播放器错误",
+	[Key.musicVisualizer]: "音频可视化",
 	[Key.musicPlay]: "播放",
 	[Key.musicPause]: "暂停",
 	[Key.musicProgress]: "播放进度",
 	[Key.musicCover]: "封面",
 	[Key.musicNoCover]: "暂无封面",
-	[Key.musicAudioPlayer]: "音频播放器",
+	[Key.musicClose]: "关闭播放器",
+	[Key.musicLike]: "收藏这首",
+	[Key.musicUnlike]: "取消收藏",
 
 	// 公告栏
 	[Key.announcement]: "公告",
@@ -102,7 +99,6 @@ export const zh_CN: Translation = {
 	[Key.projectStatusArchived]: "已归档",
 	[Key.guestbook]: "留言",
 	[Key.guestbookDescription]: "欢迎在这里留下你的足迹，分享你的想法和建议",
-	[Key.untitled]: "无标题",
 	[Key.uncategorized]: "未分类",
 	[Key.noTags]: "无标签",
 
@@ -132,7 +128,6 @@ export const zh_CN: Translation = {
 	[Key.bangumi]: "番组计划",
 
 	// 番组计划筛选和状态文本
-	[Key.bangumiTitle]: "我的番组计划",
 	[Key.bangumiSubtitle]: "记录我的二次元之旅",
 	[Key.bangumiFilterAll]: "全部",
 	[Key.bangumiFilterWatched]: "看过",
@@ -171,14 +166,6 @@ export const zh_CN: Translation = {
 	[Key.bangumiFetchError]: "Bangumi 数据拉取失败",
 	[Key.bangumiFetchErrorDesc]:
 		"构建时从 Bangumi API 获取数据失败，该页面内容暂不可用。",
-	[Key.bangumiUsername]: "用户名",
-	[Key.bangumiApi]: "API",
-	[Key.bangumiConfigTip]: "提示：请在页面配置中设置正确的Bangumi用户名",
-	[Key.bangumiPrevPage]: "上一页",
-	[Key.bangumiNextPage]: "下一页",
-	[Key.bangumiCurrentPage]: "第",
-	[Key.bangumiTotalPages]: "页，共",
-	[Key.bangumiPage]: "页",
 
 	// 番组分类
 	[Key.bangumiCategoryBook]: "书籍",
@@ -189,8 +176,6 @@ export const zh_CN: Translation = {
 
 	// 番组数据更新
 	[Key.bangumiLastUpdated]: "数据更新日期",
-	[Key.bangumiUpdatedAt]: "构建时间",
-	[Key.bangumiDataStatic]: "静态数据",
 
 	// VNDB
 	[Key.vndb]: "VNDB",
@@ -233,27 +218,19 @@ export const zh_CN: Translation = {
 
 	// 追番 - 公共组件
 	[Key.animeTotal]: "总追番",
-	[Key.animeAverageRating]: "平均评分",
 	[Key.animeSearch]: "搜索番剧...",
-	[Key.animeAllTypes]: "全部",
-	[Key.animeTV]: "TV 动画",
-	[Key.animeMovie]: "电影",
 	[Key.animeRatingDesc]: "评分最高",
 	[Key.animeRatingAsc]: "评分最低",
 	[Key.animeDateDesc]: "最新发布",
 	[Key.animeDateAsc]: "最早发布",
 	[Key.animeNoResults]: "没有找到匹配的番剧",
 	[Key.animeLastUpdated]: "数据更新日期",
-	[Key.animeEpStatus]: "进度",
 	[Key.animeViewDetails]: "查看详情",
 	[Key.animeBilibiliAvg]: "Bilibili 均分",
 	[Key.animeNoOverview]: "暂无简介",
 	[Key.animeClose]: "关闭",
 	[Key.animeSynopsis]: "剧情简介",
 	[Key.animeWatchNow]: "立即观看",
-	[Key.animeAllWithCount]: "全部 ({count})",
-	[Key.animeTVWithCount]: "TV ({count})",
-	[Key.animeMovieWithCount]: "电影 ({count})",
 	[Key.animeTypeAnime]: "番剧",
 	[Key.animeTypeMovie]: "电影",
 	[Key.animeTypeDocumentary]: "纪录片",
@@ -292,14 +269,9 @@ export const zh_CN: Translation = {
 	[Key.malSeasonFall]: "秋季",
 
 	// 分页
-	[Key.paginationFirst]: "首页",
 	[Key.paginationPrev]: "上一页",
 	[Key.paginationNext]: "下一页",
-	[Key.paginationLast]: "末页",
 	[Key.paginationPage]: "第",
-	[Key.paginationOf]: "页，共",
-	[Key.paginationTotal]: "页，总计",
-	[Key.paginationRecords]: "条记录",
 	[Key.paginationJump]: "跳转到指定页",
 
 	// 404页面
@@ -340,16 +312,10 @@ export const zh_CN: Translation = {
 	[Key.lastModifiedOutdated]: "部分内容可能已过时",
 	[Key.lastModifiedDaysAgo]: "距今已过 {days} 天",
 	[Key.year]: "年",
-	[Key.month]: "月",
-	[Key.day]: "日",
-	[Key.hour]: "时",
-	[Key.minute]: "分",
-	[Key.second]: "秒",
 
 	// 访问量统计
 	[Key.pageViews]: "浏览量",
 	[Key.pageViewsLoading]: "加载中...",
-	[Key.pageViewsError]: "统计不可用",
 
 	// 置顶
 	[Key.pinned]: "置顶",
@@ -415,13 +381,8 @@ export const zh_CN: Translation = {
 	[Key.sponsorTitle]: "打赏支持",
 	[Key.sponsorDescription]:
 		"如果我的内容对你有帮助，欢迎通过以下方式打赏我，你的支持是我持续创作的动力！",
-	[Key.sponsorMethods]: "打赏方式",
 	[Key.sponsorList]: "打赏列表",
 	[Key.sponsorEmpty]: "暂无打赏记录",
-	[Key.sponsorAmount]: "金额",
-	[Key.sponsorDate]: "日期",
-	[Key.sponsorMessage]: "留言",
-	[Key.sponsorAnonymous]: "匿名",
 	[Key.scanToSponsor]: "扫码打赏",
 	[Key.sponsorGoTo]: "前往打赏",
 	[Key.sponsorButton]: "支持与分享",
@@ -434,7 +395,6 @@ export const zh_CN: Translation = {
 	// 站点统计
 	[Key.siteStats]: "站点统计",
 	[Key.siteStatsPostCount]: "文章",
-	[Key.siteStatsDynamicCount]: "动态",
 	[Key.siteStatsCategoryCount]: "分类",
 	[Key.siteStatsTagCount]: "标签",
 	[Key.siteStatsTotalWords]: "总字数",
@@ -490,16 +450,11 @@ export const zh_CN: Translation = {
 	[Key.scanToRead]: "扫码阅读文章",
 
 	// 代码块折叠配置
-	[Key.codeCollapsibleShowMore]: "展开",
-	[Key.codeCollapsibleShowLess]: "收起",
-	[Key.codeCollapsibleExpanded]: "代码块已展开",
-	[Key.codeCollapsibleCollapsed]: "代码块已折叠",
 
 	// 相册页面
 	[Key.gallery]: "相册",
 	[Key.galleryDescription]: "记录生活中的美好瞬间",
 	[Key.galleryPhotos]: "张照片",
-	[Key.galleryAlbums]: "本相册",
 	[Key.galleryNoAlbums]: "暂无相册",
 	[Key.galleryBackToAlbums]: "返回相册列表",
 	[Key.galleryEnterAlbum]: "进入相册",
@@ -527,4 +482,20 @@ export const zh_CN: Translation = {
 	[Key.exitImmersiveReading]: "退出沉浸阅读",
 	[Key.tocExpand]: "展开目录",
 	[Key.tocCollapse]: "折叠目录",
+
+	// 访客问候
+	[Key.greetingDawn]: "天快亮了",
+	[Key.greetingMorning]: "早上好",
+	[Key.greetingNoon]: "中午好",
+	[Key.greetingAfternoon]: "下午好",
+	[Key.greetingEvening]: "傍晚好",
+	[Key.greetingNight]: "晚上好",
+	[Key.greetingLateNight]: "夜深了",
+	[Key.greetingMsg1]: "欢迎来坐坐，随便看看。",
+	[Key.greetingMsg2]: "希望这里有你感兴趣的东西。",
+	[Key.greetingMsg3]: "喝杯水，慢慢逛。",
+	[Key.greetingMsg4]: "很久没见，最近还好吗？",
+	[Key.greetingFirstVisit]: "初次见面，请多关照",
+	[Key.greetingVisitCount]: "第 {count} 次来访",
+	[Key.greetingClose]: "关闭问候",
 };

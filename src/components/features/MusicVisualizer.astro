@@ -1,0 +1,4540 @@
+---
+// 全屏音频可视化 —— 「音域地形」构图
+//
+// 视觉语言移植自 Wallpaper Engine 壁纸《音域回响 · Sonic Topography》：
+// 一片 160×160 的体素柱阵漂浮在虚空里，五个频段各自负责一种地形抬升——
+// 超低频把中心整块顶起，低频在环带里按柱随机高度成片跳动，中低频全域
+// 缓慢流动，中频沿对角线冲出一道"河流"，高频只挑 20% 的柱子炸成尖刺。
+// 边缘用距离淡出溶进背景，于是地形是一块没有边界的岛。
+//
+// 与壁纸原始实现的差异（都是刻意为之）：
+// 1. 壁纸是 React + three.js + 20 个 Ripple uniform 结构体；这里没有框架依赖，
+//    用 WebGL2 instanced arrays 手写单 draw call，柱体只在顶点着色器里拉伸，
+//    实例属性只有 vec3(x, z, seed)，比传 mat4 省一半带宽。
+// 2. 壁纸有 15 套固定配色；这里接博客的封面双色提取，用「冷底暖峰」结构——
+//    地形发光取封面次色（与主色相差 > 70°），中心峰取主色，底色向冷端收敛。
+//    反过来做过一版：直接拿主色当发光色，肤色橙红在暗场里读成一片泥土地板。
+// 3. 壁纸按 512 个线性 bin 切频段；博客的 MusicManager 给的是 256 个
+//    40Hz–16kHz 等比频段，且做过高频显示补偿。这里按频率换算重新划边界，
+//    并把补偿除掉，否则地形会被前端的显示曲线带偏。
+// 4. 不透明渲染 + 淡出到背景色，而不是 alpha 淡出——密集几何叠 alpha 会
+//    在深度写入上翻车，颜色插值等价且没有排序问题。
+//
+// DOM 由脚本搬到 <body>，Swup 换页后与音频一起存活。样式必须 is:global，
+// 全部走 .mvz-* 命名空间。
+import I18nKey from "@/i18n/i18nKey";
+import { i18n } from "@/i18n/translation";
+import { musicPlayerConfig } from "@/config/musicConfig";
+
+// 全屏层自己的配色：与音频响应场景（canvas 调色板）完全解耦。
+// 场景色只影响地形本身，卡片的玻璃底色与功能色恒定，互不影响。
+const fsTheme = musicPlayerConfig.theme ?? {};
+const fsAccent = fsTheme.fullscreenAccent ?? "#a9c6ff";
+const fsGlass = fsTheme.fullscreenGlass ?? "#0a0b11";
+
+const visualizerLabel = i18n(I18nKey.musicVisualizer);
+const closeLabel = i18n(I18nKey.musicClose);
+const likeLabel = i18n(I18nKey.musicLike);
+const progressLabel = i18n(I18nKey.musicProgress);
+---
+
+<!--
+  构图：左侧居中的横向「唱片卡」。
+  参考的是 Apple Music / Spotify 的 Now Playing 卡片——圆形封面承担视觉焦点，
+  外圈的弧既是装饰也是进度；文字区只保留三层信息（曲目 / 歌手 / 时间），
+  控件压到最底一行。卡片的横向比例（约 2.4:1）由封面直径驱动，而不是写死
+  高度——这样标题换行、字号缩放都不会把比例撑破。
+-->
+<div class="mvz" data-mvz-root aria-hidden="true" inert role="dialog" aria-modal="true" aria-label={visualizerLabel} style={`--mvz-accent:${fsAccent};--mvz-glass:${fsGlass};`}>
+    <canvas class="mvz-gl" data-mvz="gl" aria-hidden="true"></canvas>
+    <div class="mvz-veil" aria-hidden="true"></div>
+
+    <div class="mvz-stage">
+        <div class="mvz-card" data-mvz="card">
+            <!-- 玻璃层：只负责折射与高光，不承载任何语义内容。
+                 单独一层而不是继续叠伪元素，是因为 ::before 已经被描边占掉、
+                 ::after 被颗粒占掉，而真正的「玻璃」需要三道独立的光学层。 -->
+            <span class="mvz-glass" aria-hidden="true"></span>
+            <!-- 唱片：旋转的是 .mvz-disc 这个正圆容器本身。
+                 高光/进度环必须留在旋转层之外，否则会跟着封面一起转。 -->
+            <div class="mvz-disc-wrap">
+                <div class="mvz-disc" data-mvz="disc">
+                    <img class="mvz-thumb" data-mvz="thumb" alt="" aria-hidden="true" />
+                </div>
+                <span class="mvz-disc-sheen" aria-hidden="true"></span>
+                <svg class="mvz-ring" viewBox="0 0 120 120" aria-hidden="true">
+                    <circle class="mvz-ring-track" cx="60" cy="60" r="57" />
+                    <circle class="mvz-ring-fill" data-mvz="ring" cx="60" cy="60" r="57" />
+                </svg>
+            </div>
+
+            <div class="mvz-info">
+                <div class="mvz-head">
+                    <div class="mvz-headtext">
+                        <p class="mvz-meta" data-mvz="meta" aria-hidden="true"></p>
+                        <h2 class="mvz-title" data-mvz="title"></h2>
+                        <p class="mvz-artist" data-mvz="artist"></p>
+                    </div>
+                    <button class="mvz-close" type="button" data-mvz="close" aria-label={closeLabel} title={closeLabel}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                            <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="mvz-bar" data-mvz="progress" role="slider" tabindex="0" aria-label={progressLabel}
+                    aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <p class="mvz-times">
+                        <span class="mvz-time is-cur" data-mvz="cur">0:00</span>
+                        <span class="mvz-times-sep" aria-hidden="true">/</span>
+                        <span class="mvz-time" data-mvz="dur">0:00</span>
+                    </p>
+                    <div class="mvz-line" data-mvz="line">
+                        <div class="mvz-line-fill" data-mvz="bar"></div>
+                        <div class="mvz-line-head" data-mvz="head"></div>
+                    </div>
+                </div>
+
+                <div class="mvz-transport">
+                    <div class="mvz-transport-main">
+                        <button class="mvz-btn" type="button" data-mvz="prev">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 6h1.7v12H7zM18 6v12l-8.2-6z" /></svg>
+                        </button>
+                        <button class="mvz-btn mvz-btn-main" type="button" data-mvz="toggle">
+                            <svg class="mvz-i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.2 5.2v13.6L19 12z" /></svg>
+                            <svg class="mvz-i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.2 5.2h3.5v13.6H7.2zm6.1 0h3.5v13.6h-3.5z" /></svg>
+                        </button>
+                        <button class="mvz-btn" type="button" data-mvz="next">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15.3 6H17v12h-1.7zM6 6v12l8.2-6z" /></svg>
+                        </button>
+                    </div>
+                    <button class="mvz-like" type="button" data-mvz="like" aria-pressed="false" aria-label={likeLabel} title={likeLabel}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 20.9l-1.3-1.2C5.6 15 2.4 12.1 2.4 8.6 2.4 5.7 4.7 3.4 7.6 3.4c1.6 0 3.2.8 4.4 2 1.2-1.2 2.8-2 4.4-2 2.9 0 5.2 2.3 5.2 5.2 0 3.5-3.2 6.4-8.3 11.1z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style is:global>
+    /* ══ 舞台 ═══════════════════════════════════════════════
+       地形铺满整屏，卡片浮在底部。不透明的 canvas 负责背景，
+       veil 只压暗卡片所在的下方区域，给毛玻璃一个稳定的底色。 */
+    .mvz {
+        --mvz-bg: #05060a;
+        /* 卡片功能色与玻璃基底：由组件按配置注入。缺省值是固定的冷调中性色，
+           刻意不回落到 --music-accent——否则壁纸场景色会渗进控制层配色。 */
+        --mvz-accent: #a9c6ff;
+        --mvz-glass: #0a0b11;
+        /* 场景主发光色的 CSS 镜像，只服务于「没有 WebGL」的降级底图。
+           有 WebGL 时 canvas 不透明、铺满整层，这个值根本看不到。 */
+        --mvz-core: #6b2ef0;
+        /* ══ 紧凑尺寸令牌 ══════════════════════════════════════
+           全屏层的地形是主角，卡片只做控制台。所以整卡按 0.5× 缩放：
+           宽度 min(19rem,23vw) 正好是原 38rem/46vw 的一半，圆盘同步减半，
+           两者比例不变——卡片的横向节奏是靠「封面直径」定的，比例一破，
+           它就从唱片卡变成一块控制面板。
+           字号不跟着减半：0.7rem 的中文标题在 2px 描边下会糊，专业做法是
+           几何减半、字级只降到可读下限（-30% 左右），层级靠字重和颜色维持。 */
+        --mvz-card-w: min(19rem, 23vw);
+        --mvz-card-pad: clamp(0.7rem, 0.86vw, 0.9rem);
+        --mvz-card-gap: clamp(0.68rem, 0.95vw, 0.9rem);
+        --mvz-radius: clamp(14px, 1.15vw, 17px);
+        --mvz-disc: clamp(4rem, 10vh, 5.95rem);
+        --mvz-t-title: clamp(0.86rem, 1.02vw, 0.96rem);
+        --mvz-t-artist: clamp(0.66rem, 0.76vw, 0.72rem);
+        --mvz-t-time: clamp(0.6rem, 0.68vw, 0.66rem);
+        /* 指针高光坐标：JS 在指针移动时写百分比，玻璃上那枚凸面高光
+           就跟着「光源」走。默认停在左上，静止时也有正确的受光方向。 */
+        --mvz-lx: 30%;
+        --mvz-ly: 2%;
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        isolation: isolate;
+        background: var(--mvz-bg);
+        color: #f3f2ef;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity 0.3s ease, visibility 0.3s;
+        overflow: hidden;
+    }
+
+    .mvz.is-open {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    .mvz-gl {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+    }
+
+    /* 没有 WebGL 时的降级底图：不放任何 fallback 提示文字，也不假装有地形，
+       只画一层与场景同源的极暗辉光，让卡片仍然落在一个「有空间」的底上。
+       判据是 JS 加的 .has-gl——用 :not() 而不是靠 canvas 存在与否，
+       因为 canvas 元素始终在 DOM 里，失败时它只是一块透明的空画布。 */
+    .mvz:not(.has-gl) {
+        background:
+            radial-gradient(52rem 34rem at 68% 58%,
+                color-mix(in srgb, var(--mvz-core) 26%, transparent) 0%,
+                color-mix(in srgb, var(--mvz-core) 9%, transparent) 42%,
+                transparent 72%),
+            var(--mvz-bg);
+    }
+
+    /* 压暗只发生在卡片身后。卡片缩到一半之后，整片左侧压暗会白白吃掉
+       地形最亮的那一块——这是「控制层 vs 场景」的取舍：卡片越小，
+       越该让场景透出来，只在它脚下垫一层局部暗池，保证玻璃有稳定底色。 */
+    .mvz-veil {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            radial-gradient(34rem 24rem at 15% 50%,
+                color-mix(in srgb, var(--mvz-bg) 58%, transparent) 0%,
+                color-mix(in srgb, var(--mvz-bg) 22%, transparent) 56%,
+                transparent 100%),
+            linear-gradient(to right,
+                color-mix(in srgb, var(--mvz-bg) 44%, transparent) 0%,
+                color-mix(in srgb, var(--mvz-bg) 12%, transparent) 20%,
+                transparent 36%),
+            linear-gradient(to bottom, color-mix(in srgb, var(--mvz-bg) 34%, transparent) 0%, transparent 11%),
+            linear-gradient(to top, color-mix(in srgb, var(--mvz-bg) 44%, transparent) 0%, transparent 15%);
+    }
+
+    /* 卡片固定在左侧、垂直居中。flex-start + align-items:center 比
+       absolute+transform 好：卡片高度变化时不用重算 translate。 */
+    .mvz-stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 0 clamp(1.1rem, 3vw, 3.6rem);
+        pointer-events: none;
+    }
+
+    /* ══ 关闭钮：卡片内的右上角 ═════════════════════════════
+       参考图把它放在卡内，与标题同一水平线——退出这个动作对正在
+       听歌的人来说是「收起这张卡」，不是「离开一个页面」。所以它
+       不加边框、不抢焦点，只在悬停时提亮。 */
+    .mvz-close {
+        flex-shrink: 0;
+        position: relative;
+        display: grid;
+        place-items: center;
+        /* 1.65rem ≈ 26px 的视觉圆，热区靠 ::before 外扩到 34px——
+           缩卡不能缩点击靶：视觉质量与可操作性在这里必须分开处理 */
+        width: 1.65rem;
+        height: 1.65rem;
+        margin: -0.1rem -0.15rem 0 0;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        /* 底圈用暗色而不是白色：卡片自己就是暗玻璃，白圈在暗背景上看不见、
+           在亮背景上又压不住地形的紫。暗底 + 一圈极细的亮边在两种背景
+           下都成立，这也是 macOS 交通灯按钮的做法。 */
+        background: rgba(8, 9, 14, 0.34);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.11);
+        color: rgba(255, 255, 255, 0.86);
+        cursor: pointer;
+        transition: color 0.2s, background 0.2s, transform 0.15s;
+    }
+
+    .mvz-close::before {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: inherit;
+    }
+
+    .mvz-close svg {
+        width: 0.78rem;
+        height: 0.78rem;
+    }
+
+    .mvz-close:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.14);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+    }
+
+    .mvz-close:active {
+        transform: scale(0.9);
+    }
+
+    /* ══ 卡片 ═══════════════════════════════════════════════
+       玻璃分三层做，各管一件互不替代的事：
+         ① .mvz-card 本体  —— 基底色 + backdrop-filter（唯一真正采样背景的一层）
+         ② .mvz-glass      —— 凸面高光，位置跟指针走，模拟光源在曲面上滑动
+         ③ ::before        —— 1px 折射描边（上沿受光 / 右下功能色）
+         ④ ::after         —— 磨砂颗粒
+
+       backdrop-filter 只允许出现一次。两层 backdrop 会在合成阶段各采一次
+       背景再叠，代价翻倍，而视觉上换不来任何东西——真正的「玻璃感」来自
+       折射层与高光层，不是来自把背景糊两遍。
+
+       模糊半径 22px 而不是原来的 44px：卡片缩到一半以后，44px 的核半径
+       已经接近整卡尺寸，背景会被碾成一块纯色，玻璃立刻退成半透明色块。
+       模糊半径必须显著小于元素尺寸，这条比任何参数都重要。 */
+    .mvz-card {
+        position: relative;
+        isolation: isolate;
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: var(--mvz-card-gap);
+        width: var(--mvz-card-w);
+        padding: var(--mvz-card-pad);
+        /* 描边交给 ::before 画受光渐变，本体只留结构 */
+        border: 1px solid transparent;
+        border-radius: var(--mvz-radius);
+        background:
+            /* ① 上沿受光带：收窄到 15%。玻璃的厚度只在这十几个像素里
+                  读得出来，铺得越宽越像「蒙了一层白纱」 */
+            linear-gradient(
+                176deg,
+                rgba(255, 255, 255, 0.13) 0%,
+                rgba(255, 255, 255, 0.035) 15%,
+                rgba(255, 255, 255, 0) 44%
+            ),
+            /* ② 功能色只在左下角渗一点：整片晕染会让玻璃失去中性，
+                  和地形的冷暖打起架来 */
+            radial-gradient(
+                130% 160% at 2% 108%,
+                color-mix(in srgb, var(--mvz-accent) 24%, transparent),
+                transparent 62%
+            ),
+            /* ③ 基底 0.74：小尺寸下唯一的空间线索就是「能看见背后那根
+                  柱子的轮廓」，但再透下去，亮场里的白字就守不住对比度了 */
+            color-mix(in srgb, var(--mvz-glass) 74%, transparent);
+        /* saturate 1.45：1.2 会显得灰，1.75 会把地形的血红色原样抬进卡内。
+           brightness 压到 0.95 而不是抬高：卡片是暗色物体，背后是亮场时
+           把背景提亮等于把白字往下拉——毛玻璃的正确做法是先压后透。 */
+        -webkit-backdrop-filter: blur(22px) saturate(1.45) brightness(0.95) contrast(1.02);
+        backdrop-filter: blur(22px) saturate(1.45) brightness(0.95) contrast(1.02);
+        box-shadow:
+            /* 触地阴影只给 2px：它负责「浮起来」，不给就贴死在背景上 */
+            0 2px 6px -2px rgba(0, 0, 0, 0.72),
+            0 22px 54px -28px rgba(0, 0, 0, 0.95),
+            /* 玻璃厚度：一圈极紧的内暗边 + 上沿一道亮线。
+               这是真玻璃与「圆角矩形 + 半透明底」之间最便宜的区分 */
+            inset 0 0 22px -8px rgba(0, 0, 0, 0.72),
+            inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        transition: box-shadow 0.6s ease;
+    }
+
+    /* 凸面高光：位置由 --mvz-lx/--mvz-ly 决定，JS 跟随指针写入。
+       用 screen 混合而不是普通叠加——玻璃上的高光是「加光」，不是「加白」。 */
+    .mvz-glass {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        background:
+            radial-gradient(
+                46% 82% at var(--mvz-lx) var(--mvz-ly),
+                rgba(255, 255, 255, 0.19) 0%,
+                rgba(255, 255, 255, 0.055) 38%,
+                transparent 70%
+            ),
+            /* 从受光角往里衰减的体光：没有这一层，卡内就是一块均匀的深色，
+               玻璃的「厚」读不出来。它比上沿那条亮线重要得多——亮线只描边，
+               这一层给的是体积。 */
+            linear-gradient(
+                158deg,
+                rgba(255, 255, 255, 0.075) 0%,
+                rgba(255, 255, 255, 0.018) 34%,
+                rgba(255, 255, 255, 0) 58%
+            );
+        mix-blend-mode: screen;
+        opacity: 0.95;
+    }
+
+    /* 渐变描边：1px 内描边从左上受光渐次过渡到右下的功能色，
+       比统一 alpha 的实线更像真玻璃的厚边。中段刻意留到 0.02——
+       没有这段「断光」，边缘会读成一根均匀的白线，而不是折射。 */
+    .mvz-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        padding: 1px;
+        border-radius: inherit;
+        background: linear-gradient(
+            148deg,
+            rgba(255, 255, 255, 0.58) 0%,
+            rgba(255, 255, 255, 0.12) 26%,
+            rgba(255, 255, 255, 0.02) 58%,
+            color-mix(in srgb, var(--mvz-accent) 52%, transparent) 100%
+        );
+        -webkit-mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+        mask-composite: exclude;
+        pointer-events: none;
+    }
+
+    /* 磨砂颗粒：一把微噪声压掉纯渐变的塑料感。
+       叠在基底之上、内容之下，透明度压到 5%，肉眼只在暗场里察觉到质感。 */
+    .mvz-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        border-radius: inherit;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+        opacity: 0.05;
+        mix-blend-mode: overlay;
+        pointer-events: none;
+    }
+
+    /* 内容必须浮在玻璃/噪点之上，否则颗粒会盖到标题上 */
+    .mvz-card > *:not(.mvz-glass) {
+        position: relative;
+        z-index: 3;
+    }
+
+    /* 播放中卡片边缘泛起功能色光晕：这是「声音正在发生」的最小提示，
+       比任何文字都直接。光晕颜色来自固定功能色，与地形的冷暖无关。
+       半径从 120px 收到 74px——小卡片配大光晕会糊成一团雾。 */
+    .mvz-card.is-live {
+        box-shadow:
+            0 2px 6px -2px rgba(0, 0, 0, 0.72),
+            0 22px 54px -28px rgba(0, 0, 0, 0.95),
+            0 0 78px -32px color-mix(in oklab, var(--mvz-accent) 78%, transparent),
+            inset 0 0 22px -8px rgba(0, 0, 0, 0.66),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2),
+            inset 0 -1px 0 color-mix(in srgb, var(--mvz-accent) 30%, transparent);
+    }
+
+    /* 不支持毛玻璃时退成实心深色，不能让卡片变成「透明板」 */
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+        .mvz-card {
+            background: color-mix(in srgb, var(--mvz-glass) 94%, transparent);
+        }
+    }
+
+    /* 曲目编号做成标题上方的「眉标」：字号小到不参与阅读层级，
+       但给了卡片一个出版物式的起头，而不是让标题直接顶到边缘。 */
+    .mvz-meta {
+        margin: 0 0 0.2rem;
+        font-size: 0.5rem;
+        font-weight: 500;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        font-variant-numeric: tabular-nums;
+        color: rgba(255, 255, 255, 0.38);
+        transition: opacity 0.6s ease;
+    }
+
+    .mvz-meta:empty {
+        display: none;
+    }
+
+    .mvz-meta::before {
+        content: "";
+        display: inline-block;
+        width: 4px;
+        height: 4px;
+        margin-right: 0.45rem;
+        background: var(--mvz-accent);
+        vertical-align: 0.12em;
+        box-shadow: 0 0 8px color-mix(in oklab, var(--mvz-accent) 70%, transparent);
+    }
+
+    /* ══ 圆盘 ═══════════════════════════════════════════════
+       圆形封面是卡片里唯一的曲线，承担视觉焦点，也是这张卡的「唱片」。
+       外圈那道弧同时是「进度环」——只读，拖动交给下面的线性条：
+       在圆环上拖进度需要算角度，手指还会挡住封面，不如线性条可靠。
+
+       分层很重要：wrap（不转，承载投影与高光）→ disc（转，裁剪封面）
+       → sheen/ring（不转）。投影留在旋转元素上，每帧都会触发重绘。 */
+    .mvz-disc-wrap {
+        position: relative;
+        flex-shrink: 0;
+        width: var(--mvz-disc);
+        height: var(--mvz-disc);
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.05);
+        box-shadow:
+            0 12px 26px -16px rgba(0, 0, 0, 0.95),
+            0 1px 6px -3px rgba(0, 0, 0, 0.6);
+    }
+
+    .mvz-disc {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.04);
+        transform: rotate(0deg);
+        will-change: transform;
+        backface-visibility: hidden;
+    }
+
+    .mvz-thumb {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0;
+        filter: saturate(1.05);
+        transition: opacity 0.6s ease;
+    }
+
+    .mvz-thumb.is-ready {
+        opacity: 1;
+    }
+
+    .mvz-thumb.is-empty {
+        visibility: hidden;
+    }
+
+    /* 固定在唱片之上的光泽：左上角一团柔光 + 一道很淡的各向异性反光。
+       它不跟着转，读起来就是「玻璃罩在转动的唱片上」，这是静止的高光
+       与运动的画面之间唯一能拉开层次的手段。 */
+    .mvz-disc-sheen {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        pointer-events: none;
+        background:
+            radial-gradient(78% 78% at 26% 10%, rgba(255, 255, 255, 0.2), transparent 54%),
+            conic-gradient(from 200deg,
+                transparent 0deg,
+                rgba(255, 255, 255, 0.07) 24deg,
+                transparent 62deg,
+                transparent 200deg,
+                rgba(255, 255, 255, 0.045) 232deg,
+                transparent 268deg);
+        box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+            inset 0 -14px 24px -18px rgba(0, 0, 0, 0.7);
+    }
+
+    .mvz-ring {
+        position: absolute;
+        inset: -0.3rem;
+        width: calc(100% + 0.6rem);
+        height: calc(100% + 0.6rem);
+        transform: rotate(-90deg);
+        pointer-events: none;
+        overflow: visible;
+    }
+
+    .mvz-ring-track {
+        fill: none;
+        stroke: rgba(255, 255, 255, 0.18);
+        stroke-width: 1.8;
+    }
+
+    .mvz-ring-fill {
+        fill: none;
+        /* 掺白：封面主色大多是低饱和的暗调，纯色描边在黑底上读不出来 */
+        stroke: color-mix(in oklab, var(--mvz-accent) 86%, #fff);
+        stroke-width: 3.6;
+        stroke-linecap: round;
+        /* 2πr, r=57 */
+        stroke-dasharray: 358.14;
+        stroke-dashoffset: 358.14;
+        filter: drop-shadow(0 0 5px color-mix(in oklab, var(--mvz-accent) 85%, transparent));
+        transition: stroke-dashoffset 0.2s linear;
+    }
+
+    /* ══ 信息区 ═════════════════════════════════════════════ */
+    .mvz-info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-self: stretch;
+        justify-content: center;
+    }
+
+    .mvz-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+
+    .mvz-headtext {
+        min-width: 0;
+    }
+
+    .mvz-title {
+        margin: 0;
+        font-size: var(--mvz-t-title);
+        font-weight: 650;
+        line-height: 1.18;
+        letter-spacing: 0;
+        text-wrap: balance;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
+        transition: opacity 0.38s ease, transform 0.38s cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+
+    /* 只有拉丁标题才收紧字距。中文加负字距压掉的是字间白，直接伤可读性。 */
+    .mvz-title.is-latin {
+        letter-spacing: -0.015em;
+    }
+
+    .mvz-title.is-enter {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    .mvz-artist {
+        margin: 0.22rem 0 0;
+        font-size: var(--mvz-t-artist);
+        letter-spacing: 0.005em;
+        color: rgba(255, 255, 255, 0.56);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* ══ 进度 ═══════════════════════════════════════════════
+       参考图只用「当前 / 总时长」的文本 + 圆环；这里补一条 2px 细线作
+       拖动靶区——纯文本无法承载 seek。线不做成高饱和大条：它必须让位
+       给圆环，否则两个进度指示会互相抢注意力。 */
+    .mvz-bar {
+        margin-top: 0.5rem;
+        padding: 0.12rem 0;
+        cursor: pointer;
+        touch-action: none;
+        pointer-events: auto;
+    }
+
+    .mvz-times {
+        display: flex;
+        align-items: baseline;
+        gap: 0.3rem;
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.02em;
+    }
+
+    .mvz-time {
+        font-size: var(--mvz-t-time);
+        color: rgba(255, 255, 255, 0.5);
+        transition: color 0.2s;
+    }
+
+    .mvz-time.is-cur {
+        color: rgba(255, 255, 255, 0.88);
+        font-weight: 500;
+    }
+
+    .mvz-times-sep {
+        font-size: 0.56rem;
+        color: rgba(255, 255, 255, 0.24);
+    }
+
+    .mvz-bar:hover .mvz-time {
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .mvz-bar:hover .mvz-time.is-cur {
+        color: #fff;
+    }
+
+    .mvz-line {
+        position: relative;
+        height: 2px;
+        margin-top: 0.34rem;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.16);
+        transition: height 0.2s ease, background 0.2s ease;
+    }
+
+    .mvz-bar:hover .mvz-line {
+        height: 3px;
+        background: rgba(255, 255, 255, 0.24);
+    }
+
+    .mvz-line-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0;
+        border-radius: 2px;
+        background: linear-gradient(to right,
+            color-mix(in oklab, var(--mvz-accent) 35%, #fff),
+            var(--mvz-accent));
+        box-shadow: 0 0 12px color-mix(in oklab, var(--mvz-accent) 60%, transparent);
+        transition: width 0.15s linear;
+    }
+
+    .mvz-line-head {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        width: 7px;
+        height: 7px;
+        margin-left: -3.5px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow:
+            0 0 0 2.5px color-mix(in oklab, var(--mvz-accent) 22%, transparent),
+            0 0 11px 1px color-mix(in oklab, var(--mvz-accent) 78%, transparent);
+        transform: translateY(-50%) scale(0);
+        transition: transform 0.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+
+    .mvz-bar:hover .mvz-line-head,
+    .mvz-bar:focus-visible .mvz-line-head {
+        transform: translateY(-50%) scale(1);
+    }
+
+    .mvz-bar:focus-visible {
+        outline: none;
+    }
+
+    /* ══ 走带 ═══════════════════════════════════════════════
+       三栏网格：左右两栏等宽，中间那栏放主控件组，于是控件组在信息区
+       居中，而收藏键贴住右边缘——和参考图的轴心一致。
+       主键 3.1rem（≈50px，拇指热区充足），次级键只有图标本身。 */
+    .mvz-transport {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        margin-top: auto;
+        padding-top: 0.45rem;
+    }
+
+    .mvz-transport-main {
+        grid-column: 2;
+        display: flex;
+        align-items: center;
+        gap: clamp(0.28rem, 0.55vw, 0.45rem);
+    }
+
+    .mvz-btn {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 1.9rem;
+        height: 1.9rem;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.78);
+        cursor: pointer;
+        transition: color 0.18s, background 0.18s, transform 0.14s;
+    }
+
+    /* 视觉 30px、热区 38px：缩卡缩的是可见面积，不是可点面积。
+       外扩只取 3px——再大一点，主键和相邻键的命中区就会互相重叠，
+       点在「下一首」的左缘会被主键吃掉。 */
+    .mvz-btn::before,
+    .mvz-like::before {
+        content: "";
+        position: absolute;
+        inset: -3px;
+        border-radius: inherit;
+    }
+
+    .mvz-btn svg {
+        width: 0.92rem;
+        height: 0.92rem;
+    }
+
+    .mvz-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.09);
+    }
+
+    .mvz-btn:active {
+        transform: scale(0.9);
+    }
+
+    .mvz-btn-main {
+        /* 2.5rem = 40px：卡片减半后仍不让主键掉到拇指热区以下。
+           它是整张卡唯一的高光实体，尺寸也是构图上的锚点。 */
+        width: 2.5rem;
+        height: 2.5rem;
+        background: #f5f4f1;
+        color: #0a0b0d;
+        box-shadow:
+            0 0 0 1px rgba(255, 255, 255, 0.16),
+            0 6px 18px -9px rgba(255, 255, 255, 0.55),
+            0 0 34px -12px color-mix(in oklab, var(--mvz-accent) 85%, transparent);
+    }
+
+    .mvz-btn-main svg {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    .mvz-btn-main:hover {
+        background: #fff;
+        color: #000;
+        transform: scale(1.05);
+    }
+
+    .mvz-i-pause {
+        display: none;
+    }
+
+    .mvz-btn-main[data-playing="true"] .mvz-i-play {
+        display: none;
+    }
+
+    .mvz-btn-main[data-playing="true"] .mvz-i-pause {
+        display: block;
+    }
+
+    /* ══ 收藏 ═══════════════════════════════════════════════
+       空心 → 实心的切换只用 fill/color，不做缩放位移；额外给一次
+       180ms 的 pop，让「按下去」有触感但不至于弹一下。 */
+    .mvz-like {
+        position: relative;
+        grid-column: 3;
+        justify-self: end;
+        display: grid;
+        place-items: center;
+        width: 1.9rem;
+        height: 1.9rem;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.55);
+        cursor: pointer;
+        transition: color 0.2s, background 0.2s;
+    }
+
+    .mvz-like svg {
+        width: 0.95rem;
+        height: 0.95rem;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.5;
+        stroke-linejoin: round;
+        transition: fill 0.2s ease;
+    }
+
+    .mvz-like:hover {
+        color: rgba(255, 255, 255, 0.85);
+        background: rgba(255, 255, 255, 0.07);
+    }
+
+    .mvz-like[data-on="true"] {
+        color: var(--mvz-accent);
+    }
+
+    .mvz-like[data-on="true"] svg {
+        fill: currentColor;
+    }
+
+    .mvz-like.is-pop svg {
+        animation: mvz-like-pop 0.34s cubic-bezier(0.2, 1.4, 0.4, 1);
+    }
+
+    @keyframes mvz-like-pop {
+        0% { transform: scale(1); }
+        38% { transform: scale(1.22); }
+        100% { transform: scale(1); }
+    }
+
+    /* ══ 控件随空闲淡出：看地形的时候，界面该退场 ═══════════ */
+    .mvz-close,
+    .mvz-card {
+        transition: opacity 0.7s ease, box-shadow 0.6s ease, border-color 0.6s ease,
+            color 0.2s, background 0.2s, transform 0.15s;
+    }
+
+    .mvz.is-idle .mvz-close {
+        opacity: 0.3;
+    }
+
+    .mvz.is-idle .mvz-card {
+        opacity: 0.55;
+    }
+
+    /* 悬停卡片时立刻回来，不用等指针移动事件 */
+    .mvz-card:hover {
+        opacity: 1;
+    }
+
+    /* ══ 窄屏 ═══════════════════════════════════════════════
+       平板竖屏：卡片放宽回 54vw。紧凑尺寸是为宽屏准备的——那个尺度上
+       地形铺满整屏，卡片该退让；竖屏下地形本来就窄，卡片再缩就只剩图标。 */
+    @media (max-width: 1024px) {
+        .mvz-card {
+            width: min(19rem, 54vw);
+        }
+
+        .mvz {
+            --mvz-disc: clamp(3.7rem, 9.4vh, 5.2rem);
+        }
+    }
+
+    /* 手机：卡片铺满可用宽度，仍然左对齐、垂直居中。
+       圆形封面和横向信息区的关系保持不变——竖向堆叠会让卡片长到压住地形。 */
+    @media (max-width: 720px) {
+        .mvz-stage {
+            padding: 0 1.05rem;
+        }
+
+        .mvz-card {
+            width: 100%;
+            gap: 0.8rem;
+            padding: 0.85rem;
+            border-radius: 18px;
+        }
+
+        .mvz {
+            /* 站点在窄屏把根字号降到 14px，rem 会跟着缩水；
+               用 vw 主导、rem 兜底，封面才不会被算小两档 */
+            --mvz-disc: clamp(4.2rem, 22vw, 5.4rem);
+            --mvz-t-title: 1rem;
+            --mvz-t-artist: 0.78rem;
+            --mvz-t-time: 0.68rem;
+        }
+
+        .mvz-bar {
+            margin-top: 0.55rem;
+        }
+
+        .mvz-transport {
+            padding-top: 0.5rem;
+        }
+
+        .mvz-btn {
+            width: 2.1rem;
+            height: 2.1rem;
+        }
+
+        .mvz-btn-main {
+            width: 2.6rem;
+            height: 2.6rem;
+        }
+
+        .mvz-like {
+            width: 2.1rem;
+            height: 2.1rem;
+        }
+
+        .mvz-meta {
+            display: none;
+        }
+    }
+
+    /* 极窄屏 / 极矮视口：只收紧内边距与控件，封面尺寸交给上一档的 vw 公式，
+       再写死一次会把它重新压回「小圆点」 */
+    @media (max-width: 420px) {
+        .mvz-card {
+            padding: 0.75rem 0.8rem;
+            gap: 0.65rem;
+        }
+
+        .mvz-btn {
+            width: 1.95rem;
+            height: 1.95rem;
+        }
+
+        .mvz-btn-main {
+            width: 2.4rem;
+            height: 2.4rem;
+        }
+    }
+
+    /* 横屏手机 / 矮窗口：高度是这个布局的稀缺资源，优先压封面 */
+    @media (max-height: 620px) {
+        .mvz {
+            --mvz-disc: clamp(3.4rem, 15vh, 4.6rem);
+        }
+
+        .mvz-bar {
+            margin-top: 0.42rem;
+        }
+
+        .mvz-transport {
+            padding-top: 0.35rem;
+        }
+    }
+
+    /* 键盘焦点环：全屏层里所有可操作元素都必须可见地反馈。
+       1.5px / 2px 偏移——缩卡之后 2px 的白环相对卡片过粗，会盖住主键的
+       白色实体本身，反而看不出焦点在哪。 */
+    .mvz button:focus-visible,
+    .mvz [role="slider"]:focus-visible {
+        outline: 1.5px solid rgba(255, 255, 255, 0.9);
+        outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .mvz,
+        .mvz-title,
+        .mvz-close,
+        .mvz-card,
+        .mvz-btn,
+        .mvz-time,
+        .mvz-line,
+        .mvz-line-head,
+        .mvz-like,
+        .mvz-like svg,
+        .mvz-ring-fill {
+            transition: none;
+        }
+
+        .mvz-like.is-pop svg {
+            animation: none;
+        }
+
+        .mvz-title.is-enter {
+            opacity: 1;
+            transform: none;
+        }
+    }
+</style>
+
+
+<script is:inline>
+(function () {
+    // ── 单例：DOM 搬到 body，Swup 换页后复用同一实例 ──────────
+    var live = window.__fireflyVisualizer;
+    var fresh = document.querySelector('[data-mvz-root]');
+    if (live && live.el) {
+        if (fresh && fresh !== live.el) fresh.remove();
+        live.refresh();
+        return;
+    }
+
+    var mgr = window.__fireflyMusic;
+    if (!mgr || !fresh) return;
+
+    var i18nCfg = (mgr.getState().config || {}).i18n || {};
+    var LABEL_PLAY = i18nCfg.play || 'Play';
+    var LABEL_PAUSE = i18nCfg.pause || 'Pause';
+
+    var el = fresh;
+    document.body.appendChild(el);
+
+    var q = function (s) { return el.querySelector('[data-mvz="' + s + '"]'); };
+    var ui = {
+        root: el,
+        gl: q('gl'),
+        card: q('card'),
+        meta: q('meta'),
+        disc: q('disc'),
+        thumb: q('thumb'),
+        title: q('title'),
+        artist: q('artist'),
+        prev: q('prev'),
+        next: q('next'),
+        toggle: q('toggle'),
+        progress: q('progress'),
+        line: q('line'),
+        bar: q('bar'),
+        head: q('head'),
+        cur: q('cur'),
+        dur: q('dur'),
+        ring: q('ring'),
+        like: q('like'),
+        close: q('close')
+    };
+
+    // 圆环周长，r=57。用 getTotalLength 更稳，但固定值省一次布局计算。
+    var RING_LEN = 358.14;
+
+    var isOpen = false;
+    var lastFocus = null;
+    var prevOverflow = '';
+    var rafId = 0;
+    var elapsed = 0;
+    var lastTs = 0;
+
+    // ── 唱盘自转 ─────────────────────────────────────────────
+    // 不用 CSS animation：CSS 只能「瞬间全速 / 瞬间静止」，而真实转盘有
+    // 惯量。这里每帧把角速度指数逼近目标值（起转 ~0.6s、刹车 ~1.2s），
+    // 暂停时角度原地保留——恢复播放时不会跳回 0°，这是 CSS 重启动画最
+    // 常见的破功点。
+    //
+    // 24s 一圈（15°/s）：比黑胶的 33⅓ RPM 慢得多。按真实转速转，封面
+    // 上的人脸和文字会糊成残影，读起来像加载动画而不是唱片。
+    var SPIN_RATE = 15;
+    var spinDeg = 0;
+    var spinVel = 0;
+    var spinDirty = true;
+
+    function stepSpin(dt, playing) {
+        var target = (playing && !reduced) ? SPIN_RATE : 0;
+        if (!target && spinVel < 0.04) {
+            if (spinDirty) {
+                spinVel = 0;
+                // 停稳后写一次终值就够，之后不再碰 DOM
+                if (ui.disc) ui.disc.style.transform = 'rotate(' + spinDeg.toFixed(2) + 'deg)';
+                spinDirty = false;
+            }
+            return;
+        }
+        // 加速比减速更慢一点：唱片机的转速建立比断电后的滑行更「重」
+        var ease = target > spinVel ? 2.2 : 1.5;
+        spinVel += (target - spinVel) * Math.min(1, dt * ease);
+        spinDeg = (spinDeg + spinVel * dt) % 360;
+        spinDirty = true;
+        if (ui.disc) ui.disc.style.transform = 'rotate(' + spinDeg.toFixed(2) + 'deg)';
+    }
+
+    // ── 地形参数 ─────────────────────────────────────────────
+    // HALF 是地形半边长（世界单位），168 见方。
+    var HALF = 84;
+    var REACH = HALF * 2;
+
+    // ── 画质档位 ─────────────────────────────────────────────
+    // 一档同时决定四件事，而不是只调网格：网格密度、渲染分辨率倍率、
+    // 像素预算、辉光降采样倍率、镜像反射开关。
+    // 只调网格是「假自适应」——真正压垮帧率的是像素填充与后处理，
+    // 顶点数在两万实例的规模上从来不是瓶颈。
+    //
+    //   grid    实例网格边长（顶点成本 ≈ grid²×20）
+    //   scale   devicePixelRatio 的上限（渲染分辨率 = CSS 尺寸 × scale）
+    //   px      像素预算，超出后按 sqrt 压缩
+    //   bloom   辉光缓冲的降采样倍率（2 = 半分辨率，4 = 1/4）
+    //   mirror  是否计算镜像声源（每条波前的第二次距离求值）
+    //
+    // 原先还有一档 parts（浮尘数量）。浮尘整段移除后，低端机的粒子填充率
+    // 开销随之消失；省下的预算直接体现在这里——各档的像素预算不再为
+    // 「额外一层半透明叠加」留余量。
+    var QUALITY = [
+        { key: 'ultra', grid: 152, scale: 1.45, px: 2800000, bloom: 2, mirror: 1 },
+        { key: 'high', grid: 124, scale: 1.20, px: 2200000, bloom: 3, mirror: 1 },
+        { key: 'mid', grid: 96, scale: 1.00, px: 1700000, bloom: 4, mirror: 0 },
+        { key: 'low', grid: 72, scale: 0.82, px: 1200000, bloom: 4, mirror: 0 }
+    ];
+    var tierIdx = 0;
+    var grid = 0;
+    var cell = 0;
+
+    // 初始档位：先看视口与指针类型，再看硬件提示。
+    // hardwareConcurrency ≤ 4 或 deviceMemory ≤ 4 的机器几乎一定是
+    // 集显/低功耗 U，与其让它先卡三秒再降档，不如一开始就别满载。
+    (function pickTier() {
+        var w = window.innerWidth || 1280;
+        var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        var cores = navigator.hardwareConcurrency || 8;
+        var mem = navigator.deviceMemory || 8;
+        if (w < 720 || (coarse && w < 1024)) tierIdx = cores <= 4 ? 3 : 2;
+        else if (w < 1180) tierIdx = cores <= 4 ? 2 : 1;
+        else tierIdx = (cores <= 4 || mem <= 4) ? 2 : 0;
+    })();
+
+    // ?grid=64 覆盖网格密度。软件光栅化跑两万根柱体要好几分钟，
+    // 验证形态和配色时用低密度，量与效果分开看。
+    var GRID_OVERRIDE = (function () {
+        var m = /[?&]grid=(\d+)/.exec(location.search);
+        return m ? Math.max(24, Math.min(256, parseInt(m[1], 10))) : 0;
+    })();
+
+    // ?q=0..3 强制画质档，用来核对每一档的实际观感
+    var TIER_OVERRIDE = (function () {
+        var m = /[?&]q=([0-3])\b/.exec(location.search);
+        return m ? parseInt(m[1], 10) : -1;
+    })();
+    if (TIER_OVERRIDE >= 0) tierIdx = TIER_OVERRIDE;
+
+    function pickGrid() {
+        return GRID_OVERRIDE || QUALITY[tierIdx].grid;
+    }
+
+    // ── 实验通道 ─────────────────────────────────────────────
+    // 四条查询参数，全部默认关闭，生产路径上每个判断都是常量 false。
+    //
+    //   ?seed=N     固定随机源。涟漪落点与流星轨迹原先走 Math.random，
+    //               同一段输入永远拿不到同一帧——"改前/改后"无法比较，
+    //               因为两次跑的不是同一个场景。
+    //   ?fixed=1    时钟固定为 1/60 秒/帧。测量结果以「帧」为单位，
+    //               免疫 rAF 调度抖动与机器快慢。
+    //   ?stim=NAME  用已知的注入信号替代分析器输出。输入已知，输出才可测。
+    //   ?rec=1      逐帧记录亮度与频段。不开启时不分配任何缓冲。
+    var QS = location.search;
+    var SEED = (function () {
+        var m = /[?&]seed=(\d+)/.exec(QS);
+        return m ? parseInt(m[1], 10) : (Date.now() & 0x7fffffff);
+    })();
+
+    // mulberry32：状态 32 位，跨引擎结果一致，足够复现布点。
+    var rndState = SEED >>> 0;
+    function rnd() {
+        rndState = (rndState + 0x6d2b79f5) >>> 0;
+        var t = rndState;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+
+    var STIM = (function () {
+        var m = /[?&]stim=([a-z0-9_-]+)/i.exec(QS);
+        return m ? m[1].toLowerCase() : "";
+    })();
+    var FIXED = /[?&]fixed=1\b/.test(QS);
+    var REC = /[?&]rec=1\b/.test(QS);
+    // ?field=0 关掉方位声场，只留原来的地形。改空间场参数时必须能一键
+    // 退回基线——否则「这段画面好看了」永远说不清是谁的功劳。
+    var FIELD_OFF = /[?&]field=0\b/.test(QS);
+
+    // ── 调色板 ───────────────────────────────────────────────
+    // 五段：bg 背景/淡出目标、core 主发光、edge 边缘暗档、rip 涟漪、peak 峰值
+    //
+    // 写入调用方给的 out 数组，不返回新数组：这个函数在主循环里每帧跑 5 次，
+    // 每次分配 3 个 float 看着不多，但 60fps 下是每秒 300 个短命对象，
+    // 会周期性触发 GC 抖动（表现为画面每隔几秒轻微一顿）。
+    function hsl2rgb(h, s, l, out) {
+        h = ((h % 360) + 360) % 360 / 360;
+        s = Math.max(0, Math.min(1, s));
+        l = Math.max(0, Math.min(1, l));
+        var r, g, b;
+        if (s === 0) {
+            r = g = b = l;
+        } else {
+            var q2 = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            var p2 = 2 * l - q2;
+            var hue = function (t) {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
+                if (t < 1 / 2) return q2;
+                if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
+                return p2;
+            };
+            r = hue(h + 1 / 3); g = hue(h); b = hue(h - 1 / 3);
+        }
+        if (out) {
+            out[0] = r; out[1] = g; out[2] = b;
+            return out;
+        }
+        return [r, g, b];
+    }
+
+    function set3(dst, r, g, b) {
+        dst[0] = r; dst[1] = g; dst[2] = b;
+    }
+
+    var pal = {
+        bg: [0.020, 0.022, 0.038],
+        core: [0.42, 0.18, 0.94],
+        edge: [0.17, 0.05, 0.44],
+        rip: [0.58, 0.32, 1.00],
+        peak: [1.00, 0.62, 0.14]
+    };
+    var palT = {
+        bg: [0.020, 0.022, 0.038],
+        core: [0.42, 0.18, 0.94],
+        edge: [0.17, 0.05, 0.44],
+        rip: [0.58, 0.32, 1.00],
+        peak: [1.00, 0.62, 0.14]
+    };
+
+    // 音色偏移：低频占比高 → 色相往暖端推，亮度高 → 往冷端推。
+    // 壁纸是两套固定色板按 warmth 混合，这里换成单色相漂移，
+    // 好处是永远保持封面的辨识度，不会突然变成另一个主题。
+    var hueShift = 0;
+
+    // 纯计算，每帧调用不碰 DOM。写 CSS 变量会触发样式重算，
+    // 所以那一步单独拎出去，只在真正换曲/换色时做。
+    function computePalette() {
+        var p = mgr.getPalette ? mgr.getPalette() : null;
+        if (p) {
+            // 冷底暖峰：地形主色用封面次色（对比色），中心峰用封面主色。
+            // 反过来做过一版，结果是肤色橙红被当成发光色，整片地形读成泥土。
+            // 暗场里只有高饱和的冷色能当"光"，暖色只能当"强调"。
+            var hCool = p.h2;
+            var hWarm = p.h1 + hueShift;
+            hsl2rgb(hCool * 0.18 + 246 * 0.82, 0.60, 0.022, palT.bg);
+            hsl2rgb(hCool, Math.max(0.62, p.s2 * 0.95), 0.28, palT.edge);
+            hsl2rgb(hCool, Math.max(0.70, p.s2), 0.56, palT.core);
+            hsl2rgb(hCool + 12, Math.max(0.76, p.s2), 0.68, palT.rip);
+            // 峰值亮度压在 0.60：再高一点中心就会洗成白色，高度差全丢
+            hsl2rgb(hWarm + 8, 0.55, 0.70, palT.peak);
+        } else {
+            set3(palT.bg, 0.020, 0.022, 0.038);
+            set3(palT.edge, 0.17, 0.05, 0.44);
+            set3(palT.core, 0.42, 0.18, 0.94);
+            set3(palT.rip, 0.58, 0.32, 1.00);
+            set3(palT.peak, 1.00, 0.62, 0.14);
+        }
+    }
+
+    // 背景色必须和 canvas 的 clearColor 完全一致，否则地形边缘会出现
+    // 一条可见的接缝。这里做数值 dirty-check，连字符串拼接都省掉。
+    var lastBg = [-1, -1, -1];
+    function syncBackdrop(force) {
+        var r = Math.round(pal.bg[0] * 255);
+        var g = Math.round(pal.bg[1] * 255);
+        var b = Math.round(pal.bg[2] * 255);
+        if (!force && r === lastBg[0] && g === lastBg[1] && b === lastBg[2]) return;
+        lastBg[0] = r; lastBg[1] = g; lastBg[2] = b;
+        if (ui.root) {
+            ui.root.style.setProperty('--mvz-bg', 'rgb(' + r + ',' + g + ',' + b + ')');
+            // 主发光色同样写进 CSS 变量：无 WebGL 时那块静态底图要用它，
+            // 否则降级画面只能是一片纯黑的对话框。
+            ui.root.style.setProperty('--mvz-core', 'rgb(' +
+                Math.round(pal.core[0] * 255) + ',' +
+                Math.round(pal.core[1] * 255) + ',' +
+                Math.round(pal.core[2] * 255) + ')');
+        }
+    }
+
+    // ── 调色板插值：Oklab ────────────────────────────────────
+    // 在 sRGB 里线性插值两个色相时，中点会塌向灰：从品红到青的中间是一块
+    // 脏紫，换曲那半秒就是这个颜色。Oklab 的 a/b 轴近似感知均匀，同亮度
+    // 的插值基本沿着色相环走，中段不会有「灰掉」的那一下。
+    //
+    // 代价是每帧 15 次色彩空间转换（5 个色 × 正反）。全部是常量矩阵乘加，
+    // 没有分配、没有闭包，5 个颜色跑一遍约 3μs——比一次 uniform 上传便宜。
+    function srgbToLin(c) {
+        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+    function linToSrgb(c) {
+        return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+    }
+
+    var labA = [0, 0, 0];
+    function rgbToOklab(r, g, b, out) {
+        var lr = srgbToLin(r), lg = srgbToLin(g), lb = srgbToLin(b);
+        var l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
+        var m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
+        var s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
+        var l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+        out[0] = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+        out[1] = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+        out[2] = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+        return out;
+    }
+
+    function oklabToRgb(L, A, B, out) {
+        var l_ = L + 0.3963377774 * A + 0.2158037573 * B;
+        var m_ = L - 0.1055613458 * A - 0.0638541728 * B;
+        var s_ = L - 0.0894841775 * A - 1.2914855480 * B;
+        var l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
+        var r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+        var g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+        var b = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+        out[0] = linToSrgb(r < 0 ? 0 : r > 1 ? 1 : r);
+        out[1] = linToSrgb(g < 0 ? 0 : g > 1 ? 1 : g);
+        out[2] = linToSrgb(b < 0 ? 0 : b > 1 ? 1 : b);
+        return out;
+    }
+
+    var labB = [0, 0, 0];
+    function lerpPal(a, b, k) {
+        rgbToOklab(a[0], a[1], a[2], labA);
+        rgbToOklab(b[0], b[1], b[2], labB);
+        labA[0] += (labB[0] - labA[0]) * k;
+        labA[1] += (labB[1] - labA[1]) * k;
+        labA[2] += (labB[2] - labA[2]) * k;
+        oklabToRgb(labA[0], labA[1], labA[2], a);
+    }
+
+    // 换曲时 syncMeta 直接写入 palT；pal 跟着 palT 走一个 ~110ms 的过渡。
+    var PAL_TAU = 0.11;
+    function lerpPalettes(dt) {
+        var k = 1 - Math.exp(-dt / PAL_TAU);
+        if (k > 0.5) k = 0.5;          // 追帧时不要一步跳过去
+        lerpPal(pal.bg, palT.bg, k);
+        lerpPal(pal.edge, palT.edge, k);
+        lerpPal(pal.core, palT.core, k);
+        lerpPal(pal.rip, palT.rip, k);
+        lerpPal(pal.peak, palT.peak, k);
+        updateExposure(dt);
+    }
+
+    // ── 曝光 ─────────────────────────────────────────────────
+    // 不同封面的峰值亮度能差三倍：白底插画当封面时中心峰直接顶到纯白，
+    // 高度差全丢；深色封面又整片压在黑里。按调色板的加权亮度反推一个
+    // 曝光系数，让「高光的相对层次」在换曲之后仍然成立。
+    // 参考点取缺省调色板的峰值亮度，于是缺省配色下曝光恰好是 1.0。
+    var exposureAmt = 1;
+    var EXPO_REF = 0.666;
+    function updateExposure(dt) {
+        var lp = 0.2126 * pal.peak[0] + 0.7152 * pal.peak[1] + 0.0722 * pal.peak[2];
+        var lc = 0.2126 * pal.core[0] + 0.7152 * pal.core[1] + 0.0722 * pal.core[2];
+        var m = lp * 0.65 + lc * 0.35;
+        var t = Math.pow(EXPO_REF / (m > 0.12 ? m : 0.12), 0.55);
+        if (t < 0.86) t = 0.86;
+        else if (t > 1.16) t = 1.16;
+        exposureAmt = follow(exposureAmt, t, dt, 1.4, 1.4);
+    }
+
+    // ── 矩阵（列主序，与 WebGL 约定一致）────────────────────
+    function m4() { return new Float32Array(16); }
+
+    function perspective(out, fovy, aspect, near, far) {
+        var f = 1 / Math.tan(fovy / 2);
+        out[0] = f / aspect; out[1] = 0; out[2] = 0; out[3] = 0;
+        out[4] = 0; out[5] = f; out[6] = 0; out[7] = 0;
+        out[8] = 0; out[9] = 0; out[10] = (far + near) / (near - far); out[11] = -1;
+        out[12] = 0; out[13] = 0; out[14] = 2 * far * near / (near - far); out[15] = 0;
+        return out;
+    }
+
+    function lookAt(out, ex, ey, ez, cx, cy, cz) {
+        var zx = ex - cx, zy = ey - cy, zz = ez - cz;
+        var zl = Math.sqrt(zx * zx + zy * zy + zz * zz) || 1;
+        zx /= zl; zy /= zl; zz /= zl;
+
+        // up = (0,1,0)，叉乘后归一
+        var xx = zz, xy = 0, xz = -zx;
+        var xl = Math.sqrt(xx * xx + xz * xz) || 1;
+        xx /= xl; xz /= xl;
+
+        var yx = zy * xz - zz * xy;
+        var yy = zz * xx - zx * xz;
+        var yz = zx * xy - zy * xx;
+
+        out[0] = xx; out[1] = yx; out[2] = zx; out[3] = 0;
+        out[4] = xy; out[5] = yy; out[6] = zy; out[7] = 0;
+        out[8] = xz; out[9] = yz; out[10] = zz; out[11] = 0;
+        out[12] = -(xx * ex + xy * ey + xz * ez);
+        out[13] = -(yx * ex + yy * ey + yz * ez);
+        out[14] = -(zx * ex + zy * ey + zz * ez);
+        out[15] = 1;
+        return out;
+    }
+
+    function mul(out, a, b) {
+        for (var c = 0; c < 4; c++) {
+            var b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+            out[c * 4] = a[0] * b0 + a[4] * b1 + a[8] * b2 + a[12] * b3;
+            out[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9] * b2 + a[13] * b3;
+            out[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3;
+            out[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3;
+        }
+        return out;
+    }
+
+    // 4×4 求逆：点击涟漪要把屏幕坐标反投影到 y=0 平面，绕不开这个
+    function invert(out, m) {
+        var a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
+        var a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
+        var a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11];
+        var a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
+
+        var b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10;
+        var b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11;
+        var b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+        var b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30;
+        var b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31;
+        var b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+
+        var det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+        if (!det) return null;
+        det = 1 / det;
+
+        out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+        out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+        out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+        out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+        out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+        out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+        out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+        out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+        out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+        out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+        out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+        out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+        out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+        out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+        out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+        out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+        return out;
+    }
+
+    // ── 着色器 ───────────────────────────────────────────────
+    // 顶点：每个实例只拿到 (x, z, seed)，柱体的拉伸完全在 GPU 里算。
+    // 4 次 simplex 覆盖了原版 6 次的所有用途——同一噪声复用到不同相位，
+    // 视觉上分不出，但省掉三分之一的顶点算力。
+    //
+    // ── 空间声场模型 ────────────────────────────────────────
+    // 这一版把地形从「频谱柱阵」升成「声压场」。三条来自声学的规则在
+    // 顶点着色器里被显式建模，它们不是装饰参数，每一条都能在教科书里
+    // 找到出处，也都能在画面上被单独指出来：
+    //
+    //  ① 球面扩散 + 空气吸收（ISO 9613）：波前振幅按 1/r 衰减，且高频
+    //     衰减系数 α ∝ f²。于是低频波前能跑到岛缘，高频波前几十个单位
+    //     就散掉——「远处只剩低音」这个听感在画面上有了对应。
+    //  ② 指向性（directivity）：真实声源不是全向点。梳状/号角型声源的
+    //     指向性随频率升高而收窄，这里把波前从「同心圆」改成「瓣」——
+    //     没有这一条，画面读起来永远是水波，不是声源。
+    //  ③ 镜像声源（image-source method）：反射声等价于一个关于界面
+    //     对称的虚拟声源。这里用关于听者中心对称的虚源近似后墙反射：
+    //     主波前扫过的同时，一圈更弱、更迟、更闷的波从反方向补上。
+    //
+    // 外加一条听觉定位事实：低于 ~700Hz 双耳时间差主导、方向感模糊，
+    // 高于 ~1.5kHz 强度差主导、方向感清晰。所以频段到方位的映射里，
+    // 低频扇区宽而软、高频扇区窄而锐（见 uField 的 lobe 指数与宽度）。
+    var VERT = [
+        'precision highp float;',
+        'attribute vec3 aPos;',
+        'attribute vec3 aNormal;',
+        'attribute vec2 aUv;',
+        'attribute vec3 aInst;',
+        '',
+        'uniform mat4 uMVP;',
+        'uniform float uTime;',
+        'uniform float uHalf;',
+        'uniform float uRange;',
+        'uniform float uIdleWave;',
+        'uniform float uDensity;',
+        'uniform float uSmoothness;',
+        'uniform float uEnergy;',
+        'uniform float uSubBass;',
+        'uniform float uBass;',
+        'uniform float uLowMid;',
+        'uniform float uMid;',
+        'uniform float uHighMid;',
+        'uniform float uCentral;',
+        'uniform float uRing;',
+        'uniform float uFlow;',
+        'uniform float uRiver;',
+        'uniform float uSpike;',
+        // 波前槽位：A = (x, z, 发射时刻, 带符号强度)，B = (dirX, dirZ, 指向锐度, 归一化频率)
+        'uniform vec4 uRipA[8];',
+        'uniform vec4 uRipB[8];',
+        // 频段方位扇区：(方位角, 源半径, 增益, 归一化频率)
+        'uniform vec4 uField[8];',
+        'uniform vec3 uCamPos;',
+        'uniform float uSpatial;',
+        'uniform float uTail;',
+        // 0 = 不算镜像声源。低画质档关掉这一项，等于每条波前省掉
+        // 一次 length() + 两次 exp()——顶点着色器里最贵的一段。
+        'uniform float uMirror;',
+        '',
+        'varying vec4 vA;',
+        'varying vec4 vB;',
+        'varying vec4 vC;',
+        'varying vec4 vD;',
+        'varying float vDepth;',
+        '',
+        'vec3 mod289(vec3 x){ return x - floor(x * (1.0 / 289.0)) * 289.0; }',
+        'vec2 mod289(vec2 x){ return x - floor(x * (1.0 / 289.0)) * 289.0; }',
+        'vec3 permute(vec3 x){ return mod289(((x * 34.0) + 1.0) * x); }',
+        '',
+        'float snoise(vec2 v){',
+        '  const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);',
+        '  vec2 i = floor(v + dot(v, C.yy));',
+        '  vec2 x0 = v - i + dot(i, C.xx);',
+        '  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);',
+        '  vec4 x12 = x0.xyxy + C.xxzz;',
+        '  x12.xy -= i1;',
+        '  i = mod289(i);',
+        '  vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));',
+        '  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);',
+        '  m = m * m; m = m * m;',
+        '  vec3 x = 2.0 * fract(p * C.www) - 1.0;',
+        '  vec3 h = abs(x) - 0.5;',
+        '  vec3 ox = floor(x + 0.5);',
+        '  vec3 a0 = x - ox;',
+        '  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);',
+        '  vec3 g;',
+        '  g.x = a0.x * x0.x + h.x * x0.y;',
+        '  g.yz = a0.yz * x12.xz + h.yz * x12.yw;',
+        '  return 130.0 * dot(m, g);',
+        '}',
+        '',
+        '// 缓出抬升：起势快、收势稳，高能量时留一点弹性过冲',
+        'float easeLift(float raw, float maxH){',
+        '  float x = clamp(raw, 0.0, 1.0);',
+        '  float eased = 1.0 - pow(1.0 - x, 2.5);',
+        '  float over = sin(x * 6.2831 * 1.5) * exp(-x * 4.0) * 0.15;',
+        '  return (eased + over) * maxH;',
+        '}',
+        '',
+        '// 流动抬升：起势平缓、峰值带呼吸，用于覆盖整片地形的频段',
+        'float flowLift(float raw, float maxH){',
+        '  float x = clamp(raw, 0.0, 1.0);',
+        '  return (pow(x, 0.75) + sin(x * 3.14159) * 0.12) * maxH;',
+        '}',
+        '',
+        'void main(){',
+        '  vec2 p = aInst.xy;',
+        '  float seed = aInst.z;',
+        '  float dist = length(p);',
+        '',
+        '  float falloff = smoothstep(uHalf * 0.60 * uRange, uHalf * 0.30 * uRange, dist);',
+        '',
+        '  // ── 底噪：两路同族噪声拼出「海面」，静音时场景也不死 ──',
+        '  float n1 = snoise(p * 0.055 + vec2(uTime * 0.11, uTime * 0.045));',
+        '  float n2 = snoise(p * 0.048 + vec2(-uTime * 0.06, uTime * 0.09));',
+        '  float n3 = snoise(p * 0.02 + vec2(uTime * 0.03, -uTime * 0.02));',
+        '  float n4 = snoise(p * 0.10 + vec2(-uTime * 0.07, uTime * 0.19));',
+        '',
+        '  float wave = sin(p.x * 0.15 + p.y * 0.10 - uTime * 0.6) * 0.5 + 0.5;',
+        '  float idleBase = mix(n1 * 0.5 + 0.5, wave, uSmoothness * 0.5 + 0.2);',
+        '  // 幅度保持 0.8，不要往上抬。曾经试过 1.3，理由是「静音时地形看不见」——',
+        '  // 那个判断是错的：底噪把整片网格均匀抬起 2–3 个单位之后，在 96×96 的',
+        '  // 网格上正好落进亮度映射的线性段，一整张细密的地板就连成了带网格缝的',
+        '  // 平面，岛的边界、纵深全部消失。安静时就该是黑的——那是「虚空」，不是缺陷。',
+        '  float elevation = idleBase * 0.8 * falloff;',
+        '',
+        '  // ── 超低频：中心整块隆起，是「呼吸」位 ──',
+        '  float subRegion = pow(1.0 - smoothstep(0.0, uHalf * 0.32 * uRange, dist + n1 * 7.0), 1.5);',
+        '  float subLift = easeLift(uSubBass, 7.0) * subRegion * uCentral;',
+        '  float peak = clamp(subLift / 6.0, 0.0, 1.0);',
+        '',
+        '  // ── 低频：环带里成片跳动，每根柱子的随机高度差制造颗粒感 ──',
+        '  float bassRegion = smoothstep(uHalf * 0.42 * uRange, uHalf * 0.06 * uRange, dist + n4 * 8.0);',
+        '  float bassRnd = smoothstep(0.0, 1.0, seed + uDensity * 0.5);',
+        '  float bassLift = easeLift(uBass, 5.5) * bassRegion * bassRnd * uRing;',
+        '  // 轻度阶梯：壁纸的台地感来自高度被量化，连续坡面出来是沙丘不是地形',
+        '  bassLift = mix(bassLift, floor(bassLift * 2.5) / 2.5, 0.35);',
+        '',
+        '  // ── 中低频：全域缓流，不做区域限制，负责「整片地面在动」 ──',
+        '  float lowMidLift = flowLift(uLowMid, 4.2) * (n2 * 0.5 + 0.5) * uFlow;',
+        '',
+        '  // ── 中频：沿对角线冲出的河流，只有正相位抬升 ──',
+        '  float riverFlow = sin(p.x * 0.2 + p.y * 0.2 + n4 * 2.0 - uTime * 2.0);',
+        '  float midLift = flowLift(uMid, 5.8) * max(0.0, riverFlow) * uRiver;',
+        '',
+        '  // ── 高频：只挑 20% 的柱子炸成尖刺，密集分布反而看不出高频 ──',
+        '  float highRegion = smoothstep(uHalf * 0.14 * uRange, uHalf * 0.38 * uRange, dist);',
+        '  float highLift = 0.0;',
+        '  if (fract(seed * 13.3) > 0.8) {',
+        '    highLift = easeLift(uHighMid, 4.0) * highRegion * fract(seed * 7.7) * uSpike;',
+        '  }',
+        '  if (seed > 0.99 && dist < uHalf * 0.52) {',
+        '    float e = clamp(uEnergy, 0.0, 1.0);',
+        '    highLift += (1.0 - pow(1.0 - e, 1.5) + sin(e * 12.566) * exp(-e * 5.0) * 0.2) * 5.5 * uSpike;',
+        '  }',
+        '',
+        '  elevation += (subLift + bassLift + lowMidLift + midLift + highLift) * falloff;',
+        '',
+        '  // ── 方位声场：八个频段各占一个扇区 ────────────────────',
+        '  // 角度先被噪声扰乱再比较，扇区边界于是呈锯齿状——读起来是「声源在',
+        '  // 某个方向上」，而不是一张等分的饼图。低频瓣宽而钝、高频瓣窄而锐，',
+        '  // 对应双耳定位在低频模糊、在高频清晰这条事实。',
+        '  float ang = atan(p.y, p.x + 1e-4) + n2 * 0.62 + n4 * 0.22;',
+        '  float field = 0.0;',
+        '  for (int i = 0; i < 8; i++) {',
+        '    vec4 f = uField[i];',
+        '    if (f.z > 0.004) {',
+        '      float da = ang - f.x;',
+        '      da = da - 6.2831853 * floor(da / 6.2831853 + 0.5);',
+        '      // 指向性随频率收窄：低频绕射、高频成束。这是真实声源的规律，',
+        '      // 也是「八个方向」能被逐一读出来的前提——瓣太宽就糊成一圈。',
+        '      float lobe = pow(0.5 + 0.5 * cos(da), mix(3.0, 16.0, f.w));',
+        '      float rw = mix(9.0, 3.6, f.w);',
+        '      float rd = (dist - f.y) / rw;',
+        '      // 取最大值而不是求和：求和会把八个扇区叠成一个大圆丘，',
+        '      // 每个声源自己的高度被平均掉；取最大则每个扇区保留自己的振幅，',
+        '      // 响的那个方向高、静的那个方向低——这正是「方位」要表达的东西。',
+        '      field = max(field, f.z * lobe * exp(-rd * rd));',
+        '    }',
+        '  }',
+        '  // 注意这里不能乘 falloff：方位环落在 0.44–0.53H 之间，而 falloff 的',
+        '  // 过渡区正好压在 0.30–0.60H 上——乘上去等于把整条环带砍掉一半，',
+        '  // 扇区脊线还没成形就先被衰减掉了。这里单独给一条更靠外的边缘淡出。',
+        '  float fieldRim = 1.0 - smoothstep(uHalf * 0.66, uHalf * 0.94, dist);',
+        '  elevation += field * 12.0 * uSpatial * fieldRim;',
+        '',
+        '  // ── 环境微弱起伏：让地形边缘始终在呼吸 ──',
+        '  float baseU = (n1 * 0.6 + n2 * 0.4) * 0.5 + 0.5;',
+        '  float ripU = n3 * 0.3 + 0.5;',
+        '  float combined = baseU * 0.5 + ripU * 0.35 + (seed - 0.5) * 0.15;',
+        '  combined = smoothstep(0.1, 0.9, combined);',
+        '  elevation += combined * uIdleWave * 0.8 * falloff;',
+        '',
+        '  // ── 波前：球面扩散 + 空气吸收 + 指向性 + 镜像反射 ────',
+        '  float ripN = 0.0;',
+        '  float ripW = 0.0;',
+        '  float ripF = 0.0;',
+        '  for (int i = 0; i < 8; i++) {',
+        '    vec4 a = uRipA[i];',
+        '    if (a.w != 0.0) {',
+        '      float age = uTime - a.z;',
+        '      if (age >= 0.0 && age < 3.6) {',
+        '        vec4 b = uRipB[i];',
+        '        float fr = b.w;',
+        '        float meteor = step(a.w, 0.0);',
+        '        float gain = abs(a.w);',
+        '',
+        '        // 传播速度随频率微升（同介质中 v 与波长成正比），流星额外加速',
+        '        float speed = mix(13.0, 19.5, fr) * (1.0 + meteor * 0.30);',
+        '        vec2 toP = p - a.xy;',
+        '        float r = max(length(toP), 0.001);',
+        '        float travelled = age * speed;',
+        '',
+        '        // 指向性：只在声源朝向的那一半隆起。没有它，波前就是一整圈',
+        '        // 同心圆——那是水波，不是声源。',
+        '        float dirG = 1.0;',
+        '        if (b.z > 0.001) {',
+        '          float c = dot(toP / r, b.xy) * 0.5 + 0.5;',
+        '          dirG = mix(0.20, 1.0, pow(c, mix(1.0, 4.5, b.z)));',
+        '        }',
+        '',
+        '        // 球面扩散 1/r + 空气吸收 α ∝ f²',
+        '        float spread = 1.0 / (1.0 + r * 0.0095);',
+        '        float absorbed = exp(-(0.004 + 0.042 * fr * fr) * travelled);',
+        '',
+        '        // 波包宽度随频率收窄、随传播距离变宽（频散）',
+        '        float width = mix(9.5, 2.6, fr) * (1.0 + travelled * 0.045);',
+        '        float d = r - travelled;',
+        '        float band = exp(-d * d / width);',
+        '        float env = exp(-travelled * 0.021) * (1.0 - smoothstep(2.6, 3.6, age));',
+        '',
+        '        float pulse = band * env * absorbed * spread * dirG * clamp(gain, 0.0, 1.4);',
+        '        elevation += pulse * mix(4.4, 2.1, fr);',
+        '',
+        '        // 镜像声源：关于听者中心对称的虚源 ≈ 后墙反射。',
+        '        // 同一份参数再算一次，距离换成到虚源的距离即可——',
+        '        // 反射体只会更弱、更迟、更闷（高频先被吸收），三项各给一个系数。',
+        '        float r2 = max(length(p + a.xy), 0.001);',
+        '        float dm = r2 - travelled * 0.94;',
+        '        float band2 = exp(-dm * dm / (width * 1.7));',
+        '        float pulse2 = band2 * env * absorbed * (1.0 / (1.0 + r2 * 0.0135)) * 0.34 * gain * uMirror;',
+        '        elevation += pulse2 * mix(2.6, 1.1, fr);',
+        '',
+        '        float total = pulse + pulse2 * 0.6;',
+        '        if (meteor > 0.5) ripW += total; else ripN += total;',
+        '        ripF = max(ripF, total * fr);',
+        '      }',
+        '    }',
+        '  }',
+        '',
+        '  // ── 混响尾：直达声过去之后，能量还在空间里绕 ──',
+        '  // 不做卷积，只让底噪随尾音抬一点、并带上高频抖动。',
+        '  // 它是「房间有多大」的最便宜线索。',
+        '  elevation += uTail * (n3 * 0.5 + 0.5) * 0.55 * falloff;',
+        '',
+        '  // ── 拉伸：底部锚在 y=0。底座压到 0.12 而不是 1.0 ──',
+        '  // 1.0 的等高底座会形成一层「看不见但不透明」的地面：颜色被 lift',
+        '  // 压到背景色，几何却在写深度、遮远处的高柱，斜视角下留下锯齿地平线。',
+        '  // 压到 0.12 后平地只是一层薄片，视觉上溶掉，深度也不再挡光。',
+        '  //',
+        '  // 但 0.12 的薄片仍然有顶面，密集排列时会在暗场里连成一张带网格的',
+        '  // 地板，岛的方形边界因此露出来——画面立刻从「虚空里的岛」变成',
+        '  // 「一块放在地面上的地形」。所以边缘乘两次淡出：高度收到零，',
+        '  // 水平尺寸也收到零，柱子最终退化成一点，边界就真的不存在了。',
+        '  float rimFade = 1.0 - smoothstep(uHalf * 0.56, uHalf * 0.94, dist);',
+        '  float h = (0.12 + elevation) * rimFade;',
+        // 水平方向也必须一起收缩。只压高度的话，柱顶仍以完整单元格尺寸躺在
+        // y≈0 的平面上——密集排列时那是一片带网格缝的地板，岛的方形边界
+        // 照样从射线方向露出来（斜视角下最明显）。宽度一起收到零，柱子才是
+        // 真正「终止」了，边缘只剩一层极淡的雾，没有可以指认的边。
+        '  vec3 wp = vec3(p.x + aPos.x * rimFade, (aPos.y + 0.5) * h, p.y + aPos.z * rimFade);',
+        '',
+        '  // 雾按「到相机的真实距离」算，不能用平面距离：斜视角下屏幕上方',
+        '  // 和右下角可能平面距离相同、视觉深度差一倍，用平面距离做雾',
+        '  // 会让画面失去纵深，地平线处出现硬切。',
+        '  vA = vec4(elevation, dist, aPos.y + 0.5, seed);',
+        '  vB = vec4(aNormal, peak);',
+        '  vC = vec4(aUv, clamp(sqrt(max(ripN, 0.0)), 0.0, 1.0), clamp(sqrt(max(ripW, 0.0)), 0.0, 1.0));',
+        // vD: x 空间场强度 / y 屏幕横向位置（给双耳强度差用）/ z 波前频率权重 / w 混响尾
+        '  vD = vec4(clamp(field * uSpatial, 0.0, 1.0), clamp(wp.x / uHalf, -1.0, 1.0), clamp(ripF, 0.0, 1.0), clamp(uTail, 0.0, 1.0));',
+        '  vDepth = distance(wp, uCamPos);',
+        '',
+        '  gl_Position = uMVP * vec4(wp, 1.0);',
+        '}'
+    ].join('\n');
+
+    // 片元：顶面发光、侧面自上而下渐隐。没有真实光照——
+    // 地形是自发光的数据体，打灯反而会把它变成"建筑渲染"。
+    var FRAG = [
+        'precision highp float;',
+        'varying vec4 vA;',
+        'varying vec4 vB;',
+        'varying vec4 vC;',
+        'varying vec4 vD;',
+        'varying float vDepth;',
+        '',
+        'uniform vec3 uBg;',
+        'uniform vec3 uCore;',
+        'uniform vec3 uEdge;',
+        'uniform vec3 uRip;',
+        'uniform vec3 uPeak;',
+        'uniform float uGlow;',
+        'uniform float uPeakAmt;',
+        'uniform float uSharp;',
+        'uniform float uAir;',
+        'uniform float uBrill;',
+        'uniform float uPres;',
+        'uniform float uTime;',
+        'uniform float uHalf;',
+        'uniform float uPunch;',
+        'uniform float uPan;',
+        '',
+        'float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123); }',
+        '',
+        'void main(){',
+        '  float elevation = vA.x;',
+        '  float dist = vA.y;',
+        '  float relY = vA.z;',
+        '  float seed = vA.w;',
+        '  vec3 nrm = vB.xyz;',
+        '  float peakRaw = vB.w;',
+        '  vec2 uv = vC.xy;',
+        '  float ripN = vC.z;',
+        '  float ripW = vC.w;',
+        '  float spatial = vD.x;',
+        '  float panX = vD.y;',
+        '  float ripFreq = vD.z;',
+        '  float tail = vD.w;',
+        '',
+        '  // 高度→亮度是这张图的语法，但原来的除法（/16 配 smoothstep 0.07–0.40）',
+        '  // 在 6.4 个单位处就吃满了：地形中段以上全部同亮，高度差只剩轮廓可读。',
+        '  // 方位扇区抬起的脊正好落在那段「已经不再变亮」的高度里，于是怎么加',
+        '  // 幅值都看不见。把量程推到 22 / 0.05–0.60（≈13 个单位才饱和）之后，',
+        '  // 5–15 这个真实区间才重新变成一段可辨识的明暗梯度。',
+        '  float norm = clamp(elevation / 19.0, 0.0, 1.0);',
+        '  float lift = smoothstep(0.06, 0.50, norm);',
+        '  float distFade = 1.0 - smoothstep(uHalf * 0.62, uHalf * 1.02, dist);',
+        '',
+        '  // 发光色：核心与边缘之间按柱子随机值抖动，避免整片同色',
+        '  vec3 glow = mix(uCore, uEdge, fract(seed * 11.0));',
+        '  glow = mix(glow * 0.30, glow, lift) * distFade;',
+        '',
+        '  float normalBlend = ripN * ripN;',
+        '  float whiteBlend = ripW * ripW;',
+        '',
+        '  // 波前的颜色带上频率：低频取封面主色（暖）、高频取次色（冷）。',
+        '  // 依据是空气吸收把高频先磨掉——远处只剩下暖色的低频，于是「距离」',
+        '  // 这件事第一次有了音色，而不只是亮度。',
+        '  vec3 ripCol = mix(uPeak, uRip, clamp(0.42 + ripFreq * 0.85, 0.0, 1.0));',
+        '  glow = mix(glow, ripCol, normalBlend * 0.62);',
+        '  glow += vec3(1.0) * whiteBlend * 0.34;',
+        '',
+        '  // 方位声场：扇区脊线带一点「源色」，与波前共用同一套冷暖规则。',
+        '  // 权重压到 0.20 并乘 lift：均匀染色会让整片地形读成一团同色',
+        '  // —— 扇区必须只在「确实被抬起来的那道脊」上着色。',
+        '  glow = mix(glow, ripCol, clamp(spatial * 0.20, 0.0, 0.20) * lift);',
+        '',
+        '  float peakBlend = pow(peakRaw, 0.85) * uPeakAmt;',
+        '  glow = mix(glow, uPeak, clamp(peakBlend, 0.0, 1.0) * 0.24);',
+        '',
+        '  vec3 body = (uBg * 1.15 + uCore * 0.06 * relY * lift * distFade) * mix(0.45, 1.0, relY);',
+        '  vec3 col;',
+        '',
+        '  if (nrm.y > 0.5) {',
+        '    // 顶面：高度即亮度。柱顶是唯一的信息面，其余都是体积。',
+        '    float top = lift + clamp(peakBlend * 0.4, 0.0, 1.0);',
+        '    float twinkleFade = smoothstep(60.0 * uHalf / 84.0, 30.0 * uHalf / 84.0, dist);',
+        '    float twinkle = mix(twinkleFade, 1.0, smoothstep(0.01, 0.1, norm));',
+        '',
+        '    // 静止地面的稀疏闪点：由空气感频段驱动，静音时也会偶尔亮一下',
+        '    if (fract(seed * 31.0) > 0.88 && norm < 0.42) {',
+        '      top += uAir * 1.6 * twinkle;',
+        '    }',
+        '',
+        '    // 上限 1.05 而不是外推：密集柱阵里一旦过曝，中心就会糊成一片白，',
+        '    // 高度差反而读不出来',
+        '    // 中低段再压一道 gamma：底座那 1–3 个单位的高度差原本落在',
+        '    // smoothstep 的线性段里，与真正的高柱只差一点亮度，整片读成',
+        '    // 「同高的地毯」。压完中低段，峰与坡才分得开。',
+        '    float topLit = pow(clamp(top, 0.0, 1.05), 1.14) * 1.05;',
+        '    col = mix(uBg * 0.92, glow * 1.16, clamp(topLit, 0.0, 1.05));',
+        '',
+        '    // 顶面四边勾亮：密集柱阵里，这一笔决定了能不能读出「面」',
+        '    float ex = smoothstep(0.05, 0.01, uv.x) + smoothstep(0.95, 0.99, uv.x);',
+        '    float ey = smoothstep(0.05, 0.01, uv.y) + smoothstep(0.95, 0.99, uv.y);',
+        '    float edge = min(ex + ey, 1.0);',
+        '    // 边缘高亮只在「确实被抬起来、并且确实在发光的柱子」上出现：',
+        '    // 勾边的意义是让人读出顶面，而平地没有可读的面。原先用',
+        '    // (top + 0.3) 做系数，等于给每一根柱子留了 0.3 的常亮底——底座',
+        '    // 于是被勾成一整张网格：格子是柱顶描边、黑线是格缝。那张「网」',
+        '    // 比任何边界线都更暴露「这是一块盖在平面上的柱阵」。',
+        '    // 现在系数直接跟 lift 走：没被抬起来的柱子一根线都不勾。',
+        '    float edgeFade = (1.0 - smoothstep(uHalf * 0.50, uHalf * 0.86, dist))',
+        '                   * smoothstep(0.6, 2.4, elevation);',
+        '    col += glow * edge * 0.9 * smoothstep(0.05, 0.55, top) * edgeFade;',
+        '',
+        '    // 存在感频段：缓慢闪烁，不做 40Hz 频闪——那是光敏风险，不是特效',
+        '    float flashChance = smoothstep(0.5, 1.0, uPres);',
+        '    if (fract(seed * 53.0) > 0.985 - flashChance * 0.05) {',
+        '      float sync = sin(uTime * 8.0 + seed * 50.0) * 0.5 + 0.5;',
+        '      col += mix(vec3(1.0), vec3(0.5, 1.0, 1.0), seed) * sync * uPres * (1.0 + uSharp * 1.5) * twinkle;',
+        '    }',
+        '',
+        '    // 明亮度闪点：约 1% 的柱子缓慢地亮一下。',
+        '    // 原先它捆在 edge > 0.6 上，也就是「只在顶面描边亮」——低网格档',
+        '    // 一格有几十个像素宽时，那条描边变成一枚 1px 的白色方框，',
+        '    // 在彩色地形上被读成 UI 元素而不是光。改成顶面中心的一小块光斑，',
+        '    // 并且用峰顶色：闪点必须是「地形的亮度在呼吸」，不是「叠了一层白」。',
+        '    float briPhase = sin(uTime * 1.5 + seed * 30.0) * 0.5 + 0.5;',
+        '    float briSpot = 1.0 - smoothstep(0.0, 0.34, length(uv - vec2(0.5)));',
+        '    if (fract(seed * 89.0) > 0.992 && briPhase > 0.78) {',
+        '      col += uPeak * uBrill * 1.3 * twinkle * briPhase * briSpot;',
+        '    }',
+        '  } else {',
+        '    // 侧面：平滑的音乐拉长辉光，尖锐的音乐把光锁在顶端',
+        '    float vFall = mix(1.0, 3.0, uSharp);',
+        '    float side = smoothstep(0.5 / vFall, 0.0, 1.0 - relY) * norm;',
+        '    if (norm < 0.02) side = 0.0;',
+        '    col = mix(body, mix(glow, uPeak, clamp(peakBlend * 0.4, 0.0, 1.0)), side * 1.5);',
+        '',
+        '    float rim = smoothstep(0.03, 0.0, 1.0 - relY) * norm;',
+        '    col += mix(glow, uPeak, clamp(peakBlend * 0.35, 0.0, 1.0)) * rim;',
+        '  }',
+        '',
+        '  col = mix(col, uPeak, clamp(peakBlend * 0.10, 0.0, 1.0));',
+        '  col += ripCol * normalBlend * 0.26 + vec3(1.0) * whiteBlend * 0.30;',
+        '',
+        '  // 混响尾：直达声过后，整个空间仍在低幅振荡。',
+        '  // 用极慢的相位错开，读起来是「空气还没静下来」，不是又一层噪点。',
+        '  col += glow * tail * 0.34 * (0.55 + 0.45 * sin(uTime * 1.6 + seed * 13.0));',
+        '',
+        '  // 双耳强度差（ILD）：高频内容在哪个方向，画面就往哪一侧压一点亮度。',
+        '  // 这是听觉定位里最直接的一条线索（>1.5kHz 时 ILD 主导），',
+        '  // 而 uPan 的符号已经按相机右向量投影过——镜头转向时「左右」才跟着换。',
+        '  col *= 1.0 + uPan * panX;',
+        '',
+        '  // 节拍冲击：低频每次落点给全场一次极短的提亮，',
+        '  // 这是「节奏感」最直接的来源——比让柱子长高更快被感知',
+        '  col *= 1.0 + uPunch * 0.42;',
+        '',
+        '  // 空气透视 + 边缘溶解：地形没有边界，只有「看不见为止」',
+        '  // 大气透视按视距，边缘溶解按平面距离——两者不能混用：',
+        '  // 前者决定「远近」，后者决定「离岛心多远」',
+        '  float haze = smoothstep(uHalf * 0.55, uHalf * 1.45, vDepth);',
+        '  col = mix(col, uBg * 2.1, haze * 0.62);',
+        '',
+        '  // 只有「被抬起来的部分」留在画面上。柱阵的底座在掠射角下会连成',
+        '  // 一张带缝隙的网格地板——格子是柱顶、黑线是缝——那是最容易让',
+        '  // 「虚空中的岛」破功的一处。按高度把它压下去，平地被吃掉，',
+        '  // 岛就只剩下它自己的地形。',
+        '  //',
+        '  // 注意这是一道「底座遮罩」，不是一条高度曲线：门槛必须贴着 0 收窄。',
+        '  // 写成 0.25–2.60 的时候，安静段落里一两米高的缓丘也被当成底座压掉，',
+        '  // 整片地形在弱音处直接黑掉——那是把「平地被吃掉」写成了「低处被吃掉」。',
+        '  // 真正需要抹掉的是 falloff 归零后 elevation≈0 的那圈平板。',
+        '  col = mix(col * 0.30, col, smoothstep(0.04, 0.60, elevation));',
+        '',
+        '  col = mix(col, uBg, smoothstep(uHalf * 0.72, uHalf * 0.98, dist) * 0.96);',
+        '  col = mix(col, uBg, smoothstep(uHalf * 1.45, uHalf * 1.85, vDepth));',
+        '',
+        '  // 抖动：暗场渐变里的 8bit 色带只能靠噪声打散',
+        '  col += (hash(uv * 512.0 + fract(uTime) * 71.0) - 0.5) * 0.006;',
+        '',
+        '  gl_FragColor = vec4(col, 1.0);',
+        '}'
+    ].join('\n');
+
+    // 流星：单独一个 program，用 gl.LINES 画光尾。
+    // 复用主 program 会被迫改几何布局，不值得；这里便宜得多。
+    //
+    // 这里原先还有一套 640 个实例化 quad 的「浮尘」。整段删掉的理由不是性能，
+    // 是它与这张图的语言相冲：柔边光点经过 1/4 分辨率辉光之后会变成一片
+    // 失焦光斑，铺满上半屏的空场；而体素地形是硬边、有明确前后遮挡的几何体，
+    // 柔边光斑恰好把这两点一起抹掉。它原本承担的两个作用——「空气在流动」
+    // 和「高频事件有回应」——分别由 uIdleWave 底噪、uTail 混响尾和波前系统
+    // 更准确地表达：前两者是连续场，后者是一次事件。删掉不丢信息，
+    // 换来的是整块天空重新回到纯黑，地形的轮廓因此才立得住。
+
+    var METEOR_VERT = [
+        'precision mediump float;',
+        'attribute vec3 aPos;',
+        'attribute float aFade;',
+        'uniform mat4 uMVP;',
+        'varying float vF;',
+        'void main(){',
+        '  vF = aFade;',
+        '  gl_Position = uMVP * vec4(aPos, 1.0);',
+        '}'
+    ].join('\n');
+
+    var METEOR_FRAG = [
+        'precision mediump float;',
+        'varying float vF;',
+        'uniform vec3 uColor;',
+        'void main(){',
+        '  gl_FragColor = vec4(uColor, vF);',
+        '}'
+    ].join('\n');
+
+    // ── GL 状态 ─────────────────────────────────────────────
+    var gl = null;
+    var isGL2 = false;
+    var extInst = null;
+    var prog = null;
+    var uni = {};
+    var buf = {};
+    var attr = {};
+
+    var meteorProg = null;
+    var meteorUni = {};
+    var meteorBuf = null;
+
+    // 相机右向量：方位声场要用「听者的左边」而不是世界坐标的左边，
+    // 镜头一转，左右跟着换。原来还有一个 camUp，是给浮尘 billboard 展开用的，
+    // 浮尘删掉之后它就没有消费者了。
+    var camRight = [1, 0, 0];
+
+    var proj = m4();
+    var view = m4();
+    var vp = m4();
+    var invVP = m4();
+
+    var INDEX_COUNT = 30;
+    // 离线验证用的诊断输出。只在 ?mvz=1 时生效：
+    // headless 里 console 读不到，把编译日志和绘制统计打到 DOM 上再 dump。
+    function compile(type, src, quiet) {
+        var sh = gl.createShader(type);
+        gl.shaderSource(sh, src);
+        gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+            if (!quiet) console.warn('[mvz] shader', gl.getShaderInfoLog(sh));
+            gl.deleteShader(sh);
+            return null;
+        }
+        return sh;
+    }
+
+    function link(vsrc, fsrc, quiet) {
+        var vs = compile(gl.VERTEX_SHADER, vsrc, quiet);
+        var fs = compile(gl.FRAGMENT_SHADER, fsrc, quiet);
+        if (!vs || !fs) return null;
+        var p = gl.createProgram();
+        gl.attachShader(p, vs);
+        gl.attachShader(p, fs);
+        gl.linkProgram(p);
+        gl.deleteShader(vs);
+        gl.deleteShader(fs);
+        if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+            if (!quiet) console.warn('[mvz] link', gl.getProgramInfoLog(p));
+            gl.deleteProgram(p);
+            return null;
+        }
+        return p;
+    }
+
+    // 单位立方体的 20 个顶点：4 个侧面 + 1 个顶面，底面永远朝下、不可见，
+    // 直接砍掉——省 4 个顶点和 6 个索引，在 2 万个实例上不是小数目。
+    function buildGeometry() {
+        var half = cell * 0.92 * 0.5;   // 柱宽的一半，留出格缝
+        var h = 0.5;
+        var pos = [];
+        var nrm = [];
+        var uv = [];
+
+        function quad(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz, nx, ny, nz, u0, v0, u1, v1) {
+            pos.push(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz);
+            for (var i = 0; i < 4; i++) nrm.push(nx, ny, nz);
+            uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
+        }
+
+        // +X
+        quad(half, -h, -half, half, -h, half, half, h, half, half, h, -half, 1, 0, 0, 0, 1, 0, 0);
+        // -X
+        quad(-half, -h, half, -half, -h, -half, -half, h, -half, -half, h, half, -1, 0, 0, 0, 1, 0, 0);
+        // +Z
+        quad(half, -h, half, -half, -h, half, -half, h, half, half, h, half, 0, 0, 1, 0, 1, 0, 0);
+        // -Z
+        quad(-half, -h, -half, half, -h, -half, half, h, -half, -half, h, -half, 0, 0, -1, 0, 1, 0, 0);
+        // +Y（顶面，UV 用于边缘勾亮）
+        quad(-half, h, half, half, h, half, half, h, -half, -half, h, -half, 0, 1, 0, 0, 0, 1, 1);
+
+        var idx = new Uint16Array(INDEX_COUNT);
+        for (var f = 0; f < 5; f++) {
+            var b = f * 4;
+            var o = f * 6;
+            idx[o] = b; idx[o + 1] = b + 1; idx[o + 2] = b + 2;
+            idx[o + 3] = b; idx[o + 4] = b + 2; idx[o + 5] = b + 3;
+        }
+
+        return {
+            pos: new Float32Array(pos),
+            nrm: new Float32Array(nrm),
+            uv: new Float32Array(uv),
+            idx: idx
+        };
+    }
+
+    function buildGrid(n) {
+        grid = n;
+        cell = REACH / n;
+        var halfSpan = (n * cell) / 2;
+        var inst = new Float32Array(n * n * 3);
+        var o = 0;
+        for (var i = 0; i < n; i++) {
+            var x = i * cell - halfSpan + cell * 0.5;
+            for (var j = 0; j < n; j++) {
+                var z = j * cell - halfSpan + cell * 0.5;
+                // 种子必须在 CPU 侧定死：让 GPU 每顶点自己 hash，
+                // 同一根柱子的四个角会因 sin 精度差拿到不同值，柱子被撕开
+                inst[o] = x;
+                inst[o + 1] = z;
+                inst[o + 2] = fract(Math.sin(x * 127.1 + z * 311.7) * 43758.5453);
+                o += 3;
+            }
+        }
+        return inst;
+    }
+
+    function fract(v) { return v - Math.floor(v); }
+
+    function uploadGrid(inst) {
+        if (!gl || !buf.inst) return;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.inst);
+        gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
+    }
+
+    function initGL() {
+        if (!ui.gl) return false;
+        try {
+            var opts = {
+                alpha: false, antialias: true, depth: true, stencil: false,
+                premultipliedAlpha: false, powerPreference: 'high-performance',
+                preserveDrawingBuffer: false
+            };
+            gl = ui.gl.getContext('webgl2', opts);
+            isGL2 = !!gl;
+            if (!gl) {
+                gl = ui.gl.getContext('webgl', opts) || ui.gl.getContext('experimental-webgl', opts);
+                if (gl) {
+                    extInst = gl.getExtension('ANGLE_instanced_arrays');
+                    if (!extInst) { gl = null; return false; }
+                }
+            }
+        } catch (e) {
+            gl = null;
+        }
+        if (!gl) return false;
+
+        prog = link(VERT, FRAG);
+        if (!prog) return false;
+        gl.useProgram(prog);
+        initPostPrograms();
+
+        var names = ['uMVP', 'uTime', 'uHalf', 'uRange', 'uIdleWave', 'uDensity', 'uSmoothness',
+            'uEnergy', 'uSubBass', 'uBass', 'uLowMid', 'uMid', 'uHighMid',
+            'uCentral', 'uRing', 'uFlow', 'uRiver', 'uSpike',
+            'uRipA', 'uRipB', 'uField', 'uCamPos', 'uSpatial', 'uTail', 'uMirror',
+            'uBg', 'uCore', 'uEdge', 'uRip', 'uPeak', 'uGlow', 'uPeakAmt',
+            'uSharp', 'uAir', 'uBrill', 'uPres', 'uPunch', 'uPan'];
+        // 数组 uniform 的位置查询有坑：规范允许用「uField」这种基名去查，
+        // 等价于 uField[0]，但 ANGLE / SwiftShader 上实测会返回 null，
+        // 而 set4fv 里的 if (uni[name]) 会把 null 静默吞掉——整套波前与
+        // 方位场就这么无声地不生效，画面看起来「什么也没坏」。
+        // 所以两种写法都试一遍，谁先拿到用谁。
+        function locOf(name) {
+            var l = gl.getUniformLocation(prog, name);
+            if (!l) l = gl.getUniformLocation(prog, name + '[0]');
+            return l;
+        }
+        for (var i = 0; i < names.length; i++) uni[names[i]] = locOf(names[i]);
+
+        // 几何体宽度依赖格距，格距又依赖网格密度：
+        // 必须先把 cell 算出来，否则 buildGeometry 拿到 0 会生成零面积柱体，
+        // 整个地形静默消失（err=0、drawCall 正常、就是没有像素）。
+        grid = pickGrid();
+        cell = REACH / grid;
+        var geo = buildGeometry();
+
+        buf.pos = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.pos);
+        gl.bufferData(gl.ARRAY_BUFFER, geo.pos, gl.STATIC_DRAW);
+
+        buf.nrm = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.nrm);
+        gl.bufferData(gl.ARRAY_BUFFER, geo.nrm, gl.STATIC_DRAW);
+
+        buf.uv = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.uv);
+        gl.bufferData(gl.ARRAY_BUFFER, geo.uv, gl.STATIC_DRAW);
+
+        buf.idx = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geo.idx, gl.STATIC_DRAW);
+
+        buf.inst = gl.createBuffer();
+
+        // 属性位置缓存。两个 program 的属性槽会互相覆盖，
+        // 所以每次 draw 前都要重新指一遍——这是 WebGL 的固有行为，
+        // 不是可以"设置一次就完事"的状态。
+        attr.pos = gl.getAttribLocation(prog, 'aPos');
+        attr.nrm = gl.getAttribLocation(prog, 'aNormal');
+        attr.uv = gl.getAttribLocation(prog, 'aUv');
+        attr.inst = gl.getAttribLocation(prog, 'aInst');
+
+        // 流星 program
+        meteorProg = link(METEOR_VERT, METEOR_FRAG, true);
+        if (meteorProg) {
+            meteorUni.uMVP = gl.getUniformLocation(meteorProg, 'uMVP');
+            meteorUni.uColor = gl.getUniformLocation(meteorProg, 'uColor');
+            attr.mPos = gl.getAttribLocation(meteorProg, 'aPos');
+            attr.mFade = gl.getAttribLocation(meteorProg, 'aFade');
+            meteorBuf = gl.createBuffer();
+        }
+
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.LEQUAL);
+        gl.disable(gl.CULL_FACE);
+        gl.clearColor(pal.bg[0], pal.bg[1], pal.bg[2], 1);
+
+        uploadGrid(buildGrid(grid));
+        return true;
+    }
+
+    // ── 上下文丢失 ───────────────────────────────────────────
+    // 移动端切后台、驱动重置、显存告急都会丢上下文。WebGL 的默认行为是丢完
+    // 就不回来：画面停在最后一帧，主循环照跑，控制台一声不响——现场表现
+    // 是「音乐在放，地形冻住了」，而所有代码路径看起来都正常。
+    //
+    // 两件事必须一起做：① 阻止默认行为，否则浏览器根本不会派发 restore；
+    // ② 把所有 GL 句柄置空，因为恢复之后旧句柄全部失效，而 initGL 里有
+    // 「已经存在就跳过」的判断（postQuad、buf 等），不置空就只会重建一半。
+    function resetGLHandles() {
+        gl = null;
+        isGL2 = false;
+        extInst = null;
+        prog = null;
+        uni = {};
+        buf = {};
+        attr = {};
+        meteorProg = null;
+        meteorUni = {};
+        meteorBuf = null;
+        postQuad = null;
+        brightProg = null;
+        blurProg = null;
+        compProg = null;
+        probeProg = null;
+        postLoc = { bright: {}, blur: {}, comp: {}, attr: {} };
+        postReady = false;
+        postW = 0;
+        postH = 0;
+        sceneFbo = null;
+        bloomFboA = null;
+        bloomFboB = null;
+        sceneTex = null;
+        bloomTexA = null;
+        bloomTexB = null;
+        sceneDepth = null;
+        probeFboA = null;
+        probeFboB = null;
+        probeTexA = null;
+        probeTexB = null;
+        lastProbeTex = null;
+        probeFlip = false;
+    }
+
+    // ── 后处理：辉光 + 暗角 ──────────────────────────────────
+    // 壁纸的高光是外溢的（bloom），我们此前用 clamp(top,0,1.05) 硬顶，
+    // 亮部一到顶就丢层次，整片地形读成「一块颜色」。这里补一道最简三步后处理：
+    //   场景 → 阈值+横糊（降采样到 1/4）→ 竖糊 → 与场景相加并压暗角
+    // 全在 RGBA8 上做，模糊在 1/4 分辨率，代价约等于多画一遍背景。
+    // 失败（无 WebGL2 / FBO 不完整）时整体降级为直绘，不影响播放。
+    var postReady = false;
+    var sceneFbo = null;
+    var sceneTex = null;
+    var sceneDepth = null;
+    var bloomFboA = null;
+    var bloomTexA = null;
+    var bloomFboB = null;
+    var bloomTexB = null;
+    var postQuad = null;
+    var brightProg = null;
+    var blurProg = null;
+    var compProg = null;
+    // 位置缓存：runPost 每帧跑 3 个 pass，逐帧 getUniformLocation /
+    // getAttribLocation 是纯字符串查找，放在 60fps 的路径上没有必要
+    var postLoc = { bright: {}, blur: {}, comp: {}, attr: {} };
+    var postW = 0;
+    var postH = 0;
+    // 辉光缓冲的降采样倍率，由画质档位决定。低档把辉光跑到 1/4 甚至 1/6，
+    // 省下的是后处理三趟 pass 的填充率——这是低端机上最贵的一段。
+    var bloomDiv = 2;
+    // 高光探针（1×1 乒乓）：A 读 B 写，交替进行，纹理里始终留着上一帧的平滑值
+    var probeProg = null;
+    var probeTexA = null;
+    var probeTexB = null;
+    var probeFboA = null;
+    var probeFboB = null;
+    var probeFlip = false;
+    var lastProbeTex = null;
+
+    var POST_VS = [
+        'attribute vec2 aPos;',
+        'varying vec2 vUv;',
+        'void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }'
+    ].join('\n');
+
+    // 阈值提取 + 横向模糊合一：亮部才参与辉光，暗部不进（否则整屏发灰）
+    // 高光探针：把场景亮度压成 1×1，供亮部通道自适应取阈值。
+    // 用 p=6 的幂平均近似「高光分位」——等比 max 稳，比均值贴近眼睛看到的高光。
+    // 关键是全程留在 GPU 上：一旦 readPixels 就会打断管线，这套后处理每帧三趟，
+    // 再插一次同步读回等于自废武功。
+    var PROBE_FS = [
+        'precision mediump float;',
+        'varying vec2 vUv;',
+        'uniform sampler2D uScene;',
+        'uniform sampler2D uPrev;',
+        'uniform float uMix;',
+        'void main(){',
+        '  float acc = 0.0;',
+        '  for (int i = 0; i < 16; i++) {',
+        '    vec2 uv = vec2(float(i - (i / 4) * 4) + 0.5, float(i / 4) + 0.5) * 0.25;',
+        '    vec3 c = texture2D(uScene, uv).rgb;',
+        '    float l = max(max(c.r, c.g), c.b);',
+        '    acc += l * l * l * l * l * l;',
+        '  }',
+        '  float m = pow(acc * 0.0625, 0.166667);',
+        '  float prev = texture2D(uPrev, vec2(0.5)).r;',
+        '  gl_FragColor = vec4(mix(prev, m, uMix), 0.0, 0.0, 1.0);',
+        '}'
+    ].join('\n');
+
+    var BRIGHT_FS = [
+        'precision mediump float;',
+        'varying vec2 vUv;',
+        'uniform sampler2D uTex;',
+        'uniform vec2 uTexel;',
+        'uniform sampler2D uProbe;',
+        // 这里的 uBias 是「对探针给出的阈值再挪一点」的偏置，不是绝对阈值。
+        // 曾经有一个 uThreshold，但它被下面这行探针公式整个盖掉——传了没用。
+        // 与其留一个假接口，不如把语义改成偏置：探针负责「这段音乐整体多亮」，
+        // 偏置负责「此刻音色多亮」，两者相加才是该参与辉光的亮度下限。
+        'uniform float uBias;',
+        'uniform float uKnee;',
+        'void main(){',
+        '  float probe = texture2D(uProbe, vec2(0.5)).r;',
+        // 写死的阈值在暗曲子上永远不触发、亮曲子上到处泛光。
+        // 跟着场景高光分位走：probe 高则阈值抬高，低则放宽，下限 0.36 兜住暗场。
+        // 上限 0.78 而不是更宽：阈值一放宽，柱阵的「体」也进了高光通道，
+        // 辉光就从「亮部外溢」退化成「整片起雾」。
+        '  float thr = clamp(probe * 0.62 + 0.16 + uBias, 0.36, 0.78);',
+        '  vec3 acc = vec3(0.0);',
+        '  float wsum = 0.0;',
+        '  for (int i = -3; i <= 3; i++) {',
+        '    float fi = float(i);',
+        '    float w = exp(-fi * fi * 0.22);',
+        '    vec3 c = texture2D(uTex, vUv + vec2(fi * uTexel.x, 0.0)).rgb;',
+        '    float l = max(max(c.r, c.g), c.b);',
+        '    float k = smoothstep(thr - uKnee, thr + uKnee, l);',
+        '    acc += c * k * w;',
+        '    wsum += w;',
+        '  }',
+        '  gl_FragColor = vec4(acc / wsum, 1.0);',
+        '}'
+    ].join('\n');
+
+    var BLUR_FS = [
+        'precision mediump float;',
+        'varying vec2 vUv;',
+        'uniform sampler2D uTex;',
+        'uniform vec2 uTexel;',
+        'void main(){',
+        '  vec3 acc = vec3(0.0);',
+        '  float wsum = 0.0;',
+        '  for (int i = -3; i <= 3; i++) {',
+        '    float fi = float(i);',
+        '    float w = exp(-fi * fi * 0.30);',
+        '    acc += texture2D(uTex, vUv + vec2(0.0, fi * uTexel.y)).rgb * w;',
+        '    wsum += w;',
+        '  }',
+        '  gl_FragColor = vec4(acc / wsum, 1.0);',
+        '}'
+    ].join('\n');
+
+    // 合成：场景 + 辉光，再乘一道径向暗角。
+    // 暗角不只是装饰——它把画面四周压暗，视线被收进地形中心，
+    // 这是「空间感」最便宜的一个来源（比加雾、加景深都便宜）。
+    var COMP_FS = [
+        'precision mediump float;',
+        'varying vec2 vUv;',
+        'uniform sampler2D uScene;',
+        'uniform sampler2D uBloom;',
+        'uniform float uStrength;',
+        'uniform float uVignette;',
+        'uniform vec3 uBg;',
+        'uniform float uExposure;',
+        'void main(){',
+        '  vec3 base = texture2D(uScene, vUv).rgb;',
+        '  vec3 bloom = texture2D(uBloom, vUv).rgb;',
+        '  vec3 col = base + bloom * uStrength;',
+        // 曝光：不同封面的峰值亮度差三倍以上，写死一条压缩曲线时，
+        // 亮封面糊成一片白、暗封面又黑成一团。按调色板峰值反推曝光，
+        // 让「高光的相对层次」在不同封面之间保持一致。
+        '  col *= uExposure;',
+        // 软压缩：直接相加会在中心削顶成一团白，柱顶的高低差全丢。
+        // 这条曲线保留 0..1 的层次，把 1 以上压回去。
+        '  col = col / (1.0 + col * 0.34);',
+        '  float air = exp(-length((vUv - vec2(0.5, 0.34)) * vec2(1.55, 1.0)) * 2.4);',
+        '  col += uBg * 3.2 * air;',
+        // 调色：加法混合 + 宽模糊辉光会把饱和度往下拉——三层叠加后，
+        // 只要有一个通道先顶到上限，整片就被读成灰。补回一档，放在暗角之前：
+        // 暗角是乘性的，先补色再压暗，暗部才不会既暗又灰。这一步也是
+        // 「辉光降下来之后中间调会不会变脏」的解药。
+        '  float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));',
+        '  col = mix(vec3(lum), col, 1.14);',
+        '  vec2 q = vUv - vec2(0.5, 0.46);',
+        '  float vig = 1.0 - dot(q, q) * uVignette;',
+        '  col *= clamp(vig, 0.0, 1.0);',
+        // 边缘往背景色收一点，避免暗角把画面切成一个「框」
+        '  col = mix(col, uBg, clamp((0.62 - vig) * 1.4, 0.0, 1.0) * 0.55);',
+        // 补色会把个别通道推出 1.0。硬截断在暗场里看不出，但在亮部会
+        // 让「补色」变成「偏色」——所以在这里收一次，而不是留给帧缓冲。
+        '  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);',
+        '}'
+    ].join('\n');
+
+    function makePostTex(w, h) {
+        var t = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        return t;
+    }
+
+    function makePostFbo(tex, withDepth) {
+        var f = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        if (withDepth) {
+            sceneDepth = gl.createRenderbuffer();
+            gl.bindRenderbuffer(gl.RENDERBUFFER, sceneDepth);
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, postW, postH);
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, sceneDepth);
+        }
+        var ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (!ok) { gl.deleteFramebuffer(f); return null; }
+        return f;
+    }
+
+    function releasePostTargets() {
+        if (sceneFbo) gl.deleteFramebuffer(sceneFbo);
+        if (bloomFboA) gl.deleteFramebuffer(bloomFboA);
+        if (bloomFboB) gl.deleteFramebuffer(bloomFboB);
+        if (sceneTex) gl.deleteTexture(sceneTex);
+        if (bloomTexA) gl.deleteTexture(bloomTexA);
+        if (bloomTexB) gl.deleteTexture(bloomTexB);
+        if (sceneDepth) gl.deleteRenderbuffer(sceneDepth);
+        if (probeFboA) gl.deleteFramebuffer(probeFboA);
+        if (probeFboB) gl.deleteFramebuffer(probeFboB);
+        if (probeTexA) gl.deleteTexture(probeTexA);
+        if (probeTexB) gl.deleteTexture(probeTexB);
+        probeFboA = probeFboB = null;
+        probeTexA = probeTexB = null;
+        sceneFbo = bloomFboA = bloomFboB = null;
+        sceneTex = bloomTexA = bloomTexB = null;
+        sceneDepth = null;
+    }
+
+    function initPost(w, h) {
+        if (!gl || !isGL2 || !brightProg) return false;
+        releasePostTargets();
+        postW = w;
+        postH = h;
+        bloomDiv = QUALITY[tierIdx].bloom;
+        var bw = Math.max(1, w >> bloomDiv);
+        var bh = Math.max(1, h >> bloomDiv);
+        sceneTex = makePostTex(w, h);
+        sceneFbo = makePostFbo(sceneTex, true);
+        bloomTexA = makePostTex(bw, bh);
+        bloomFboA = makePostFbo(bloomTexA, false);
+        bloomTexB = makePostTex(bw, bh);
+        bloomFboB = makePostFbo(bloomTexB, false);
+        probeTexA = makePostTex(1, 1);
+        probeFboA = makePostFbo(probeTexA, false);
+        probeTexB = makePostTex(1, 1);
+        probeFboB = makePostFbo(probeTexB, false);
+        return !!(sceneFbo && bloomFboA && bloomFboB && probeFboA && probeFboB);
+    }
+
+    function initPostPrograms() {
+        if (!gl || postQuad) return;
+        postQuad = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, postQuad);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        brightProg = link(POST_VS, BRIGHT_FS);
+        blurProg = link(POST_VS, BLUR_FS);
+        compProg = link(POST_VS, COMP_FS);
+        probeProg = link(POST_VS, PROBE_FS);
+        if (brightProg) {
+            postLoc.bright.tex = gl.getUniformLocation(brightProg, 'uTex');
+            postLoc.bright.texel = gl.getUniformLocation(brightProg, 'uTexel');
+            postLoc.bright.bias = gl.getUniformLocation(brightProg, 'uBias');
+            postLoc.bright.probe = gl.getUniformLocation(brightProg, 'uProbe');
+            postLoc.bright.knee = gl.getUniformLocation(brightProg, 'uKnee');
+            postLoc.attr.bright = gl.getAttribLocation(brightProg, 'aPos');
+        }
+        if (blurProg) {
+            postLoc.blur.tex = gl.getUniformLocation(blurProg, 'uTex');
+            postLoc.blur.texel = gl.getUniformLocation(blurProg, 'uTexel');
+            postLoc.attr.blur = gl.getAttribLocation(blurProg, 'aPos');
+        }
+        if (compProg) {
+            postLoc.comp.scene = gl.getUniformLocation(compProg, 'uScene');
+            postLoc.comp.bloom = gl.getUniformLocation(compProg, 'uBloom');
+            postLoc.comp.strength = gl.getUniformLocation(compProg, 'uStrength');
+            postLoc.comp.vignette = gl.getUniformLocation(compProg, 'uVignette');
+            postLoc.comp.bg = gl.getUniformLocation(compProg, 'uBg');
+            postLoc.comp.exposure = gl.getUniformLocation(compProg, 'uExposure');
+            postLoc.attr.comp = gl.getAttribLocation(compProg, 'aPos');
+        }
+        if (probeProg) {
+            postLoc.probe = {
+                scene: gl.getUniformLocation(probeProg, 'uScene'),
+                prev: gl.getUniformLocation(probeProg, 'uPrev'),
+                mix: gl.getUniformLocation(probeProg, 'uMix'),
+                attr: gl.getAttribLocation(probeProg, 'aPos')
+            };
+        }
+    }
+
+    function drawPostQuad(loc) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, postQuad);
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        setDivisor(loc, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.disableVertexAttribArray(loc);
+    }
+
+    function runPost() {
+        if (!postReady || !brightProg) return;
+        var bw = Math.max(1, postW >> bloomDiv);
+        var bh = Math.max(1, postH >> bloomDiv);
+        gl.disable(gl.DEPTH_TEST);
+        gl.depthMask(false);
+        gl.disable(gl.BLEND);
+
+        // ⓪ 高光探针：1×1，ping-pong 混入上一帧，得到平滑的「高光分位」
+        if (probeProg && probeFboA) {
+            var srcTex = probeFlip ? probeTexA : probeTexB;
+            var dstFbo = probeFlip ? probeFboB : probeFboA;
+            var dstTex = probeFlip ? probeTexB : probeTexA;
+            gl.bindFramebuffer(gl.FRAMEBUFFER, dstFbo);
+            gl.viewport(0, 0, 1, 1);
+            gl.useProgram(probeProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+            gl.uniform1i(postLoc.probe.scene, 0);
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, srcTex);
+            gl.uniform1i(postLoc.probe.prev, 1);
+            gl.uniform1f(postLoc.probe.mix, 0.18);
+            drawPostQuad(postLoc.probe.attr);
+            lastProbeTex = dstTex;
+            probeFlip = !probeFlip;
+            gl.activeTexture(gl.TEXTURE0);
+        }
+
+        // ① 阈值 + 横向模糊 → A
+        gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFboA);
+        gl.viewport(0, 0, bw, bh);
+        gl.useProgram(brightProg);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+        gl.uniform1i(postLoc.bright.tex, 0);
+        gl.uniform2f(postLoc.bright.texel, 1 / postW, 1 / postH);
+        // 谱质心给出的阈值偏置：音色越亮，参与辉光的亮度下限越低。
+        // 范围是 -0.07..0——只往下放，不往上收，因为探针已经把「整体亮度」
+        // 处理掉了；再往上收一次会把高光压没，画面显得脏。
+        var bias = -Math.min(0.07, Math.max(0, (sm.centroid - 0.16) * 0.36));
+        gl.uniform1f(postLoc.bright.bias, bias);
+        gl.uniform1f(postLoc.bright.knee, 0.15);
+        if (lastProbeTex) {
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, lastProbeTex);
+            gl.uniform1i(postLoc.bright.probe, 1);
+            gl.activeTexture(gl.TEXTURE0);
+        }
+        drawPostQuad(postLoc.attr.bright);
+
+        // ② 纵向模糊 → B
+        gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFboB);
+        gl.viewport(0, 0, bw, bh);
+        gl.useProgram(blurProg);
+        gl.bindTexture(gl.TEXTURE_2D, bloomTexA);
+        gl.uniform1i(postLoc.blur.tex, 0);
+        gl.uniform2f(postLoc.blur.texel, 1 / bw, 1 / bh);
+        drawPostQuad(postLoc.attr.blur);
+
+        // ③ 合成到默认帧缓冲
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, postW, postH);
+        gl.useProgram(compProg);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+        gl.uniform1i(postLoc.comp.scene, 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, bloomTexB);
+        gl.uniform1i(postLoc.comp.bloom, 1);
+        gl.activeTexture(gl.TEXTURE0);
+        // 辉光强度跟拍点走：鼓点落下时高光外溢一档，比整体提亮更像
+        // 「光在震」，也不会把暗部一起抬起来。
+        // 基数从 0.62 降到 0.50：辉光是 1/4（或 1/6）分辨率的宽模糊，
+        // 它加在暗部等于给整幅画蒙一层底色。高光的能量应该集中在少数
+        // 真正过阈值的像素上，而不是把「稍微亮一点」的东西全部放大。
+        gl.uniform1f(postLoc.comp.strength, 0.50 + beatPulse * 0.34 + sm.energy * 0.05);
+        gl.uniform1f(postLoc.comp.exposure, exposureAmt);
+        gl.uniform1f(postLoc.comp.vignette, 1.05);
+        gl.uniform3f(postLoc.comp.bg, pal.bg[0], pal.bg[1], pal.bg[2]);
+        drawPostQuad(postLoc.attr.comp);
+
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthMask(true);
+        gl.useProgram(prog);
+    }
+
+    // 主几何的属性绑定：几何属性 divisor 0，实例属性 divisor 1
+    function bindMainAttribs() {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.pos);
+        gl.enableVertexAttribArray(attr.pos);
+        gl.vertexAttribPointer(attr.pos, 3, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.nrm);
+        gl.enableVertexAttribArray(attr.nrm);
+        gl.vertexAttribPointer(attr.nrm, 3, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.uv);
+        gl.enableVertexAttribArray(attr.uv);
+        gl.vertexAttribPointer(attr.uv, 2, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.inst);
+        gl.enableVertexAttribArray(attr.inst);
+        gl.vertexAttribPointer(attr.inst, 3, gl.FLOAT, false, 0, 0);
+        setDivisor(attr.inst, 1);
+
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
+    }
+
+    function bindMeteorAttribs() {
+        gl.bindBuffer(gl.ARRAY_BUFFER, meteorBuf);
+        gl.enableVertexAttribArray(attr.mPos);
+        gl.vertexAttribPointer(attr.mPos, 3, gl.FLOAT, false, 16, 0);
+        setDivisor(attr.mPos, 0);
+        gl.enableVertexAttribArray(attr.mFade);
+        gl.vertexAttribPointer(attr.mFade, 1, gl.FLOAT, false, 16, 12);
+        setDivisor(attr.mFade, 0);
+    }
+
+    function setDivisor(loc, d) {
+        if (isGL2) gl.vertexAttribDivisor(loc, d);
+        else extInst.vertexAttribDivisorANGLE(loc, d);
+    }
+
+    // 像素预算：地形是密集小几何，边缘极多，分辨率不能省太多。
+    // 但「不能省太多」不等于「固定 230 万像素」——档位低时把预算一起降，
+    // 否则降档只降网格、分辨率纹丝不动，瓶颈（填充率）一点没动。
+    function resize() {
+        if (!gl || !ui.gl) return;
+        var q = QUALITY[tierIdx];
+        var w = ui.gl.clientWidth || window.innerWidth;
+        var h = ui.gl.clientHeight || window.innerHeight;
+        var budget = q.px;
+        var scale = Math.min(window.devicePixelRatio || 1, q.scale);
+        var px = w * h * scale * scale;
+        if (px > budget) scale *= Math.sqrt(budget / px);
+        var cw = Math.max(2, Math.round(w * scale));
+        var ch = Math.max(2, Math.round(h * scale));
+        if (ui.gl.width !== cw || ui.gl.height !== ch) {
+            ui.gl.width = cw;
+            ui.gl.height = ch;
+        }
+        gl.viewport(0, 0, cw, ch);
+        // 后处理目标随画布尺寸重建；尺寸没变就不重建（避免每帧重分配纹理）
+        if (isGL2 && brightProg && (postW !== cw || postH !== ch || !postReady)) {
+            postReady = initPost(cw, ch);
+            gl.viewport(0, 0, cw, ch);
+        }
+        if (REC && recFbo) recMaskFromCard();
+    }
+
+    // ── 相机 ─────────────────────────────────────────────────
+    // 相机世界坐标，供着色器算真实视距（大气透视要用它，不能用平面距离）
+    var camPos = [0, 0, 0];
+
+    var cam = {
+        yaw: 120,
+        pitch: 22,
+        dist: 72,
+        yawOff: 0,
+        pitchOff: 0,
+        px: 0,
+        py: 0,
+        sx: 0,
+        sy: 0,
+        // 弹簧需要速度状态，否则只是换了个写法的一阶低通
+        svx: 0,
+        svy: 0
+    };
+
+    function updateCamera(t) {
+        // 缓慢摆动 + 指针视差。恒速自动旋转会让文字也跟着"晕"，
+        // 呼吸式摆动更有生命感，且不会持续把视线推离标题。
+        var drift = reduced ? 0 : Math.sin(t * 0.055) * 5.0;
+        var yaw = (cam.yaw + drift + cam.sx * 3.2) * Math.PI / 180;
+        // 拍点推镜：一次落点让镜头向前约 1%（<1 个单位）并轻微下压。
+        // 这是「整帧跟着节奏呼吸」最便宜也最有效的一条——它同时改变所有
+        // 柱子的透视与互相遮挡，比让柱子长高更快被感知，且不需要任何额外
+        // 绘制。取 punch 与 beatPulse 的较大值：前者来自瞬态上升沿，
+        // 后者来自锁相环，所以还没算出 BPM 的前几秒也有节奏。
+        // 减弱动态时归零——推镜是整帧级的位移，正是这一类偏好要关掉的东西。
+        var kick = reduced ? 0 : Math.min(1, punch * 0.72 + beatPulse * 0.34);
+        var pitch = (cam.pitch + cam.sy * 2.0 - kick * 0.55) * Math.PI / 180;
+        var aspect = (ui.gl.width || 1) / (ui.gl.height || 1);
+
+        // 竖屏的水平视野只有横屏的零头：不放宽 fov，168 见方的地形
+        // 在手机上只剩中间几根柱子。按宽高比连续放宽到 80°——
+        // 广角畸变存在，但「看得见地形」比「透视完美」重要。
+        var narrow = aspect < 1 ? (1 - aspect) : 0;
+        var fovY = (46 + narrow * 34) * Math.PI / 180;
+        var dist = cam.dist * (1 - kick * 0.014);
+
+        var cp = Math.cos(pitch);
+        var ex = dist * cp * Math.sin(yaw);
+        var ey = dist * Math.sin(pitch);
+        var ez = dist * cp * Math.cos(yaw);
+
+        lookAt(view, ex, ey, ez, 0, 1.2, 0);
+        camPos[0] = ex; camPos[1] = ey; camPos[2] = ez;
+        // view 矩阵的行就是世界空间的相机基向量。方位声场要把频段能量
+        // 投到「听者的左/右」上，取右向量在 XZ 平面的分量即可。
+        camRight[0] = view[0]; camRight[1] = view[4]; camRight[2] = view[8];
+        perspective(proj, fovY, aspect, 0.5, 400);
+        mul(vp, proj, view);
+        // 点击涟漪要反投影，每帧顺手把逆矩阵算好——一个 4×4 求逆
+        // 在一帧里连噪声都不算，但在点击瞬间再算就要多留一次状态判断
+        invert(invVP, vp);
+    }
+
+    // ── 音频特征 ─────────────────────────────────────────────
+    // MusicManager 给的是 256 个 40Hz→16kHz 等比频段。壁纸按 512 个线性 bin
+    // 切成 8 段，等价频率边界是 190/540/1035/1940/3510/5200/7800/11000 Hz。
+    // 下面把边界换算到等比索引，并把前端为显示做的高频补偿除掉——
+    // 否则地形会继承一条上扬的响应曲线，低频整片塌平。
+    var SPEC_N = 256;
+    var spec = new Float32Array(SPEC_N);
+    var rawBands = new Float32Array(8);
+
+    // ?mvz=1 → 自动打开全屏层并注入合成频谱，用于离线截图核对渲染。
+    // 生产路径上这段永远不会执行：没有该参数时 DEBUG_SPEC 为 false，
+    // 主循环走的是真实的 mgr.getSpectrum。
+    var DEBUG_SPEC = /(?:\?|&)mvz=1\b/.test(location.search);
+    var DEBUG_OPEN = DEBUG_SPEC;
+    // ?live=1：保留 mvz=1 的自动开层，但把频谱换回真实分析器——
+    // 这是唯一能验证「整条真实链路」的通道：浏览器解码 → 分析器 → 频段 → 像素。
+    var LIVE = /[?&]live=1\b/.test(QS);
+    if (LIVE) DEBUG_SPEC = false;
+
+    // 频谱形态参考真实流行乐：低频厚、2–3kHz 有一个共振峰、高频衰减但带爆发。
+    function debugSpec(i, t) {
+        var x = i / SPEC_N;
+        var beat = Math.exp(-((t * 1.65) % 1) * 5.5);
+        var v = 0.82 * Math.pow(1 - x, 2.1) * (0.6 + 0.4 * beat);
+        v += 0.30 * Math.exp(-Math.pow((x - 0.30 - 0.05 * Math.sin(t * 0.7)) / 0.10, 2));
+        v += 0.16 * Math.exp(-Math.pow((x - 0.62 - 0.04 * Math.sin(t * 1.3)) / 0.08, 2)) * (0.45 + 0.55 * Math.sin(t * 2.1));
+        v += 0.05 * Math.pow(1 - x, 0.5) * (0.4 + 0.6 * Math.sin(t * 5.3 + x * 40));
+        return v < 0 ? 0 : v > 1 ? 1 : v;
+    }
+
+    var BANDS = [
+        0, 62,    // subBass    40 - 190 Hz
+        63, 105,  // bass      190 - 540 Hz
+        106, 131, // lowMid    540 - 1035 Hz
+        132, 156, // mid      1035 - 1940 Hz
+        157, 180, // highMid  1940 - 3510 Hz
+        181, 200, // presence 3.5 - 5.2 kHz
+        201, 217, // brilliance 5.2 - 7.8 kHz
+        218, 236  // air       7.8 - 11 kHz
+    ];
+    var bandTilt = new Float32Array(8);
+    (function computeTilt() {
+        for (var b = 0; b < 8; b++) {
+            var s = BANDS[b * 2], e = BANDS[b * 2 + 1];
+            var acc = 0;
+            for (var i = s; i <= e; i++) {
+                acc += 1 + Math.pow(i / SPEC_N, 1.4) * 2.6;
+            }
+            bandTilt[b] = acc / (e - s + 1);
+        }
+    })();
+
+    var sm = {
+        subBass: 0, bass: 0, lowMid: 0, mid: 0, highMid: 0,
+        presence: 0, brill: 0, air: 0,
+        energy: 0, warmth: 0, brightness: 0, sharpness: 0.3,
+        density: 0.4, idle: 1,
+        // 谱质心（0..1，log 频率轴上的重心）。它不参与几何，只调高光阈值：
+        // 音色越亮，「什么算高光」的标准就该越低一点——亮曲子里每一根柱顶
+        // 都该有辉光，暗曲子里只该剩中心峰。写死一个阈值做不到这件事。
+        centroid: 0.2
+    };
+    // 质心的瞬时值，先于时间平滑存在；readBands 每帧写，integrate 每步读
+    var centroidRaw = 0;
+    var prevBrightness = 0;
+
+    // ── 方位声场：八段频谱 → 八个方位扇区 ────────────────────
+    // 这是「空间音频」从比喻变成结构的地方。八个频段各自领一个方位，
+    // 扇区按自己的速率缓慢摆动（不是匀速旋转——匀速转会立刻被读成转盘），
+    // 于是频谱的分裂同时是方位上的分裂，耳朵在音乐里听到的层次，
+    // 在画面上是「声音分布在不同方向」。
+    //
+    // 基准方位刻意不等分：45° 等分会读成饼图，黄金角近似（137.5° 步进）
+    // 给出的是无周期的分布，八段之间永远不会有整齐的对称线。
+    var FIELD_AZ = [];
+    (function () {
+        for (var i = 0; i < 8; i++) FIELD_AZ.push((i * 137.5) % 360);
+    })();
+    var FIELD_RATE = [0.017, -0.023, 0.028, -0.019, 0.035, -0.027, 0.022, -0.014];
+    // 源半径：八个方向落在同一个环带上。位置固定、方位摆动，
+    // 于是「谁在响」只由高度表达——半径要是也跟着频段跑，八条脊会
+    // 散落在不同距离上，读起来是随机起伏而不是一个方位场。
+    var FIELD_RAD = [0.44, 0.47, 0.50, 0.53, 0.50, 0.47, 0.44, 0.41];
+    var fieldData = new Float32Array(8 * 4);
+    var smArr = new Float32Array(8);
+    var bandSum = 0;
+
+    // 全局空间化强度：静音时留一点结构（画面不至于变成一块随机噪声），
+    // 有能量时拉满——扇区是「音乐在空间里」的证据，安静时它该退场。
+    var spatialAmt = 0;
+    // 混响尾：能量包络的非对称平滑。上升沿快（混响是跟着直达声建的），
+    // 衰减慢（尾音本来就是慢的）。时间常数约 1.2s，接近中型厅的 RT60 一半。
+    var tailAmt = 0;
+    // 双耳强度差：高频方位在相机右向量上的投影。镜头转动时左右才跟着换，
+    // 否则「左边」只是一个世界坐标，不是听者的左边。
+    var panAmt = 0;
+
+    // ══ 包络跟随器 ═════════════════════════════════════════
+    // 一阶低通换成「攻击/释放双时间常数」。原来的单极滤波在两个方向上
+    // 用同一个系数（τ≈35ms）：鼓点落下去是立刻到位的，但回落同样是
+    // 35ms，于是地形像被弹回来；想让它慢一点，鼓点又跟不上。
+    // 分开之后攻击 14–25ms（瞬态不丢），释放 120–340ms（回落是一条
+    // 尾巴而不是弹回），这是所有专业电平表与压缩器的做法。
+    //
+    // 系数用 exp(-dt/τ) 精确离散化，而不是 pow(k, dt*60)：后者隐含
+    // 一个 60Hz 的参考帧率，144Hz 屏上时间常数会漂。
+    function follow(cur, target, dt, tauUp, tauDn) {
+        var tau = target > cur ? tauUp : tauDn;
+        return cur + (target - cur) * (1 - Math.exp(-dt / tau));
+    }
+
+    // 每个频段的 [攻击, 释放]（秒）。低频更快更短——鼓点的形状必须硬；
+    // 高频更慢更长——镲片读成一片光晕而不是噪点。
+    var BAND_TAU = [
+        [0.013, 0.200],
+        [0.015, 0.175],
+        [0.019, 0.150],
+        [0.022, 0.140],
+        [0.026, 0.125],
+        [0.038, 0.210],
+        [0.048, 0.270],
+        [0.058, 0.330]
+    ];
+
+    // 瞬态分离：每个频段跑两条并联的跟随器——「快」与「体」。
+    // 两者之差就是瞬态成分。几何用「体」驱动（不抖），闪光、辉光、
+    // 粒子爆发用「瞬态」驱动（够脆）。这是瞬态塑形器（transient shaper）
+    // 的同一套思路，只是把输出接到了像素上。
+    var fastEnv = new Float32Array(8);
+    var bodyEnv = new Float32Array(8);
+    var tranEnv = new Float32Array(8);
+
+    // ══ 节拍跟踪 ═══════════════════════════════════════════
+    // 目标不是「检测到一次低频跳变」，而是「知道拍子在哪、下一拍什么时候到」。
+    // 两步：① 频谱通量包络（正半波之和，对包络变化敏感、对音量不敏感）；
+    // ② 对包络做自相关求周期，再用锁相环把相位钉住。
+    // 有了相位就能提前渲染——涟漪在拍点落下，而不是拍点之后 30ms 才动，
+    // 这一条是「跟手」与「滞后」的分界线。
+    var ONSET_HZ = 100;
+    var ONSET_LEN = 400;                       // 4s 窗口
+    var onsetEnv = new Float32Array(ONSET_LEN);
+    var onsetIdx = 0;
+    var onsetAcc = 0;
+    var prevBandForFlux = new Float32Array(8);
+    var fluxNow = 0;
+    var fluxEma = 0;
+    var fluxDev = 0;
+    var lastOnsetAt = -9;
+    var beatPending = 0;
+    var beatPhase = 0;
+    var beatPulse = 0;
+    var beatBpm = 0;
+    var beatConf = 0;
+    var beatCount = 0;
+    var lastBeatAt = -9;
+    var tempoAt = 0;
+
+    // 通量权重：底鼓与军鼓决定拍子，高频只做色彩。权重按「这个频段
+    // 有多少节拍信息」给，不是按能量大小——高频能量小但通量大。
+    var FLUX_W = [1.0, 1.0, 0.8, 0.6, 0.5, 0.3, 0.22, 0.15];
+
+    function pushOnset(v) {
+        onsetEnv[onsetIdx] = v;
+        onsetIdx = (onsetIdx + 1) % ONSET_LEN;
+    }
+
+    // 自相关求周期：在 55–190 BPM 的滞后范围内找归一化相关最大的那个。
+    // 归一化很关键——不归一化的话长滞后天然拿到更大的和，永远选出最慢的拍。
+    function detectTempo() {
+        var sr = ONSET_HZ;
+        var minLag = Math.round(sr * 60 / 190);   // 190 BPM
+        var maxLag = Math.round(sr * 60 / 55);    // 55 BPM
+        var best = 0, bestLag = 0, bestScore = 0;
+        for (var lag = minLag; lag <= maxLag; lag++) {
+            var num = 0, e1 = 0, e2 = 0;
+            for (var i = 0; i < ONSET_LEN - lag; i++) {
+                var a = onsetEnv[(onsetIdx + i) % ONSET_LEN];
+                var b = onsetEnv[(onsetIdx + i + lag) % ONSET_LEN];
+                num += a * b; e1 += a * a; e2 += b * b;
+            }
+            var den = Math.sqrt(e1 * e2);
+            var score = den > 1e-6 ? num / den : 0;
+            // 轻微偏向 90–150 BPM：这个区间是绝大多数流行乐的落点，
+            // 不加偏置时半拍/二倍拍会频繁误判
+            var bpm = 60 * sr / lag;
+            var prior = 1 - Math.min(1, Math.abs(Math.log(bpm / 118)) * 0.55);
+            score *= 0.72 + 0.28 * prior;
+            if (score > bestScore) { bestScore = score; bestLag = lag; best = bpm; }
+        }
+        if (bestLag > 0 && bestScore > 0.18) {
+            beatBpm = beatBpm > 0 ? beatBpm + (best - beatBpm) * 0.35 : best;
+            beatConf = bestScore;
+        } else {
+            beatConf *= 0.92;
+            if (beatConf < 0.12) { beatBpm = 0; beatConf = 0; }
+        }
+    }
+
+    // 锁相：一次 onset 若落在拍点附近，就把相位往 0 拽一点点。
+    // 只拽 12%，且限制在 ±0.18——拽太狠会被切分音带跑，这是节拍跟踪
+    // 最常见的失败模式。
+    function lockPhase() {
+        if (!beatBpm) return;
+        var err = beatPhase - Math.round(beatPhase);
+        if (err > 0.5) err -= 1;
+        if (err < -0.5) err += 1;
+        if (Math.abs(err) > 0.18) return;
+        beatPhase -= err * 0.12;
+        if (beatPhase < 0) beatPhase += 1;
+    }
+
+    function onBeat(strength) {
+        beatCount++;
+        lastBeatAt = elapsed;
+        beatPulse = Math.max(beatPulse, Math.min(1, strength));
+        // 帧里消费：涟漪、凝结核、流星都挂在拍点上，而不是等阈值触发
+        beatPending = Math.max(beatPending, Math.min(1, strength));
+    }
+
+    function updateField(dt, camRightX, stereoPan, stereoWidth) {
+        smArr[0] = sm.subBass;
+        smArr[1] = sm.bass;
+        smArr[2] = sm.lowMid;
+        smArr[3] = sm.mid;
+        smArr[4] = sm.highMid;
+        smArr[5] = sm.presence;
+        smArr[6] = sm.brill;
+        smArr[7] = sm.air;
+
+        bandSum = 0;
+        for (var i = 0; i < 8; i++) {
+            var fr = i / 7;
+            var az = (FIELD_AZ[i] * Math.PI) / 180 + elapsed * FIELD_RATE[i];
+            var v = smArr[i];
+            bandSum += v;
+            // 轻度压缩而不是平方：平方会把中高频（真实音乐里常驻 0.05–0.2）
+            // 直接压成 0.002，八个扇区里只有一个亮着，方位场退化成一个凸起。
+            // 这里用 v*(0.3+0.7v)：弱的仍然弱，但不会归零。
+            var o = i * 4;
+            fieldData[o] = az;
+            fieldData[o + 1] = FIELD_RAD[i] * HALF;
+            fieldData[o + 2] = FIELD_OFF ? 0 : v * (0.3 + 0.7 * v);
+            fieldData[o + 3] = fr;
+        }
+
+        var targetSpatial = FIELD_OFF ? 0 : 0.34 + Math.min(1, bandSum * 0.45) * 0.72;
+        spatialAmt = follow(spatialAmt, targetSpatial, dt, 0.25, 0.9);
+
+        // 尾音跟着总能量走，但衰减得比平滑器更慢一档
+        tailAmt = follow(tailAmt, sm.energy, dt, 0.12, 1.25);
+        if (tailAmt < 0.002) tailAmt = 0;
+
+        // 方位→屏幕左右。优先用真立体声（ILD）：那是听者真实听到的左右。
+        // 没有立体声（单声道源/未接线）时退回方位扇区的投影——
+        // 前者是测量，后者是建模，画面上都成立。
+        var targetPan;
+        if (stereoWidth > 0.02) {
+            targetPan = stereoPan * (0.55 + stereoWidth * 0.45) * camRightX;
+        } else {
+            var dirX = Math.cos(fieldData[5 * 4]) * 0.55 + Math.cos(fieldData[6 * 4]) * 0.45;
+            targetPan = dirX * camRightX * (0.5 + sm.presence * 0.9 + sm.brill * 0.6);
+        }
+        panAmt = follow(panAmt, targetPan * 0.16, dt, 0.18, 0.5);
+    }
+
+    // 逐段自适应增益（AGC）。只作用于真实音频路径：注入信号（STIM）与离线
+    // 合成谱（DEBUG_SPEC）是测量台的已知输入，必须原样通过，否则 tools/mvz-lab
+    // 的基线数字全部作废。
+    //
+    // 为什么需要：getByteFrequencyData 给的是绝对电平。实测同一首曲子里
+    //   pres / brill / air 平滑后均值 0.05 / 0.03 / 0.02，摆幅 0.24 / 0.15 / 0.11
+    // 这三段在着色器里等于没有权能；而 sub 常驻 0.5–0.9，抬升曲线早吃到顶部，
+    // 摆幅被压到 0.3。壁纸那边之所以不需要 AGC，是因为 Wallpaper Engine 直接
+    // 传的是已归一化的分频响度，不吃绝对电平的亏。
+    //
+    // 策略保守：只放大不衰减（gain ∈ [1, 5]），峰值半衰 2.5s 回落，
+    // 这样安静段落能被拉起来，而不会把底噪也放大成满屏噪点。
+    var agcPeak = new Float32Array(8);
+    // AGC 只挂在真实分析器这条通路上（见 readBands 的 useAGC 参数）
+    var AGC_GAIN_MAX = 5;
+    var AGC_HALF_LIFE = 2.5;
+
+    function applyBandAGC(dt) {
+        var decay = Math.pow(0.5, dt / AGC_HALF_LIFE);
+        for (var b = 0; b < 8; b++) {
+            var v = rawBands[b];
+            var pk = v > agcPeak[b] ? v : agcPeak[b] * decay;
+            agcPeak[b] = pk;
+            if (pk <= 0.02) { rawBands[b] = v; continue; }
+            // 目标是把“够不着的段”抬到 0.85 级，而原本就饱满的段一律不动。
+            // 早期版本用 1/pk 的写法：sub 的 pk≈0.95 时 gain≈1.05 尚可，
+            // 但任何正在上冲的段都会被瞬间映射到 1.0，持续音变成常驻饱和——
+            // 实测低三段因此被钉死在 1.00，摆幅反而消失。
+            var g = 0.85 / pk;
+            if (g < 1) g = 1;
+            else if (g > AGC_GAIN_MAX) g = AGC_GAIN_MAX;
+            var out = v * g;
+            if (out > 1) out = 1;
+            // 轻度扩张：AGC 只解决「够不够得着」，静息值仍偏高（实测均值 0.44），
+            // 而 easeLift 在 0.44 处已经吃掉 79% 的行程——地形因此长期是「满」的，
+            // 看不出起伏。1.25 次幂把中段压下去（0.44→0.36），峰值几乎不动。
+            rawBands[b] = Math.pow(out, 1.25);
+        }
+    }
+
+    // 只负责取原始值。平滑放在主循环里做，因为系数要跟 dt 走——
+    // 掉帧时用固定系数会把响应拖成慢动作。
+    function readBands(dt, useAGC) {
+        for (var b = 0; b < 8; b++) {
+            var s = BANDS[b * 2];
+            var e = BANDS[b * 2 + 1];
+            var acc = 0;
+            for (var i = s; i <= e; i++) acc += spec[i];
+            var v = acc / ((e - s + 1) * bandTilt[b]);
+            rawBands[b] = v > 1 ? 1 : v;
+        }
+        // ── 谱质心 ───────────────────────────────────────────
+        // 八段占比回答「低频多还是高频多」，质心回答「重心落在哪」：宽带噪声
+        // 与单音在这两个指标上给出的答案并不相同，后者才是听觉上的「亮度」。
+        // spec 的索引本来就是等比频率轴（40Hz→16kHz），所以对索引求质心
+        // 等价于对 log f 求质心，接近人耳的频率分辨率——Meyda 的
+        // spectralCentroid、Butterchurn 的预设选择用的都是这一条。
+        // 归一化到 0..1 之后与采样率、FFT 长度都无关。
+        var cAcc = 0;
+        var cW = 0;
+        for (var ci = 0; ci < SPEC_N; ci++) {
+            var cw = spec[ci];
+            if (cw > 0.0001) { cAcc += ci * cw; cW += cw; }
+        }
+        centroidRaw = cW > 0.001 ? (cAcc / cW) / (SPEC_N - 1) : 0;
+        if (useAGC && !STIM && !DEBUG_SPEC) applyBandAGC(dt);
+    }
+
+    // ── 刺激注入 ─────────────────────────────────────────────
+    // 场景都是「频段值随时间的已知函数」。把它们铺平成 spec[] 时乘以
+    // bandTilt，readBands 再除掉 bandTilt，于是注入值原样进入 rawBands——
+    // 中间不多不少经过一次恒等变换，被测对象仍是完整下游链路。
+    var stimVals = new Float32Array(8);
+
+    function stimBands(t, out) {
+        var b;
+        for (b = 0; b < 8; b++) out[b] = 0;
+        if (!STIM || STIM === "silence") return;
+
+        if (STIM === "impulse") {
+            // 单帧全频段满幅，之后清零。测阶跃响应。
+            if (t >= 2 && t < 2 + 1 / 60) for (b = 0; b < 8; b++) out[b] = 1;
+            return;
+        }
+        if (STIM.indexOf("step") === 0) {
+            // step<N>：第 N 段从 t=1 起恒为 0.7
+            b = parseInt(STIM.slice(4), 10) || 0;
+            if (t >= 1) out[b] = 0.7;
+            return;
+        }
+        if (STIM.indexOf("sweep") === 0) {
+            // sweep<N>：第 N 段 1s→5s 线性升到 1 并保持，测传递曲线与上限
+            b = parseInt(STIM.slice(5), 10) || 0;
+            var u = (t - 1) / 4;
+            out[b] = u < 0 ? 0 : u > 1 ? 1 : u;
+            return;
+        }
+        if (STIM === "allsweep") {
+            var ua = (t - 1) / 4;
+            ua = ua < 0 ? 0 : ua > 1 ? 1 : ua;
+            for (b = 0; b < 8; b++) out[b] = ua;
+            return;
+        }
+        if (STIM.indexOf("flash") === 0) {
+            // flash<hz>：超低频方波脉冲，脉宽 60ms，占空比低但幅度满。
+            // 用来量「全场提亮」到底产生多少次/秒的可感闪烁。
+            var hz = parseFloat(STIM.slice(5)) || 2;
+            var per = 1 / hz;
+            var ph = t % per;
+            out[0] = ph < 0.06 ? 0.95 : 0;
+            out[1] = ph < 0.06 ? 0.55 : 0;
+            return;
+        }
+        if (STIM === "fourfloor") {
+            // 128BPM 四踩：底鼓包络 exp(-x*9)，附 8 分音符高频。真实曲目代理。
+            var bt = (t * 128) / 60;
+            var frac = bt - Math.floor(bt);
+            var kick = Math.exp(-frac * 9);
+            out[0] = kick * 0.9;
+            out[1] = kick * 0.75;
+            out[2] = kick * 0.35;
+            var hb = (t * 128 * 2) / 60;
+            var hf = hb - Math.floor(hb);
+            out[6] = Math.exp(-hf * 18) * 0.5;
+            return;
+        }
+    }
+
+    function fillStim() {
+        for (var z = 0; z < SPEC_N; z++) spec[z] = 0;
+        // clip<N>：不绕过前端，而是复刻前端那一步——先乘显示补偿 tilt，
+        // 再在 1 处截断（MusicManager.fillLive 的 if (val > 1) val = 1）。
+        // 关键在于顺序：削顶发生在「除 tilt」之前，于是低 tilt 段能顶到 1，
+        // 高 tilt 段的上限只剩 1/tilt。下游仍然走真实的 readBands 与渲染。
+        // bin<N> / oldbin<N>：把归一化值送进前端的真实整形函数，
+        // 再用得到的频谱驱动完整下游。区别只在前端那一步的顺序：
+        //   oldbin 复刻旧顺序（先乘补偿再削顶，只存在于测试页）
+        //   bin    调用 MusicManager 当前的 shapeBin
+        // 同一个构建、同一段输入、同一秒内的两次运行，差的只有那一行。
+        if (STIM.indexOf("bin") >= 0) {
+            var legacy = STIM.indexOf("oldbin") === 0;
+            var cb = parseInt(STIM.slice(legacy ? 6 : 3), 10) || 0;
+            var cu = (elapsed - 1) / 4;
+            cu = cu < 0 ? 0 : cu > 1 ? 1 : cu;
+            var cs = BANDS[cb * 2];
+            var ce = BANDS[cb * 2 + 1];
+            var shaper = mgr && mgr.__shapeBin;
+            for (var k = cs; k <= ce; k++) {
+                if (legacy) {
+                    spec[k] = Math.min(Math.pow(cu, 0.82) * 1.15 * (1 + Math.pow(k / SPEC_N, 1.4) * 2.6), 1);
+                } else {
+                    spec[k] = shaper ? shaper(cu, k, SPEC_N) : 0;
+                }
+            }
+            return;
+        }
+        stimBands(elapsed, stimVals);
+        for (var b = 0; b < 8; b++) {
+            var s = BANDS[b * 2];
+            var e = BANDS[b * 2 + 1];
+            var v = stimVals[b] * bandTilt[b];
+            for (var i = s; i <= e; i++) spec[i] = v;
+        }
+    }
+
+    // 每个场景跑够能读出稳态与衰减的长度就停，不必人盯
+    var STIM_DUR = (function () {
+        if (LIVE) return 24;
+        if (STIM.indexOf("flash") === 0) return 9;
+        if (STIM.indexOf("sweep") === 0 || STIM === "allsweep") return 7;
+        if (STIM === "impulse") return 5;
+        if (STIM === "silence") return 6;
+        return 7;
+    })();
+
+    // ── 逐帧记录 ─────────────────────────────────────────────
+    // 亮度取自真实像素：把默认帧缓冲降采样 blit 到 120×68 再回读，
+    // 每次约 8k 像素，代价远低于整屏 readPixels，又覆盖全画面。
+    // 记录的是「画出来是什么」，不是「我以为画了什么」。
+    var REC_W = 120;
+    var REC_H = 68;
+    var recBuf = [];
+    var recPix = null;
+    var recFbo = 0;
+    var recMode = "off";
+    var recHash = 0;
+    var recLuma = 0;
+    var recP90 = 0;
+    var recMotion = 0;
+    var recLumBuf = null;
+    var recPrevBuf = null;
+    var recHist = new Uint16Array(256);
+
+    function initRec() {
+        if (!REC || !gl || !isGL2 || recFbo) return;
+        try {
+            recPix = new Uint8Array(REC_W * REC_H * 4);
+            recLumBuf = new Float32Array(REC_W * REC_H);
+            recPrevBuf = new Float32Array(REC_W * REC_H);
+            var tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, REC_W, REC_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            recFbo = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, recFbo);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+            var ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            recMode = ok ? "blit" : "off";
+        } catch (e) {
+            recMode = "off";
+            window.__recErr = "init: " + (e && e.message);
+        }
+        recMaskFromCard();
+    }
+
+    // 相对亮度（WCAG 定义：先线性化再加权）。闪烁判定必须用这个，
+    // 直接用 0..255 的 sRGB 均值会把暗部的变化算大。
+    //
+    // 测光区剔除播放器卡片：卡片是静态高亮块，占画面约 12%，会把
+    // 地形那点亮度变化按比例稀释掉；而且封面图是异步加载的，
+    // 加载完成的那一帧会让亮度无端跳一下——不剔掉，可复现性测试永远过不了。
+    // 帧哈希也只在测光区上算，同一个理由。
+    var recMask = null;
+
+    function recMaskFromCard() {
+        recMask = null;
+        if (!REC) return;
+        var card = el.querySelector(".mvz-card");
+        if (!card) return;
+        var r = card.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        var w = window.innerWidth || 1;
+        var h = window.innerHeight || 1;
+        // 归一化后映射到 120×68 网格；readPixels 的行序是从下往上
+        var x0 = Math.max(0, Math.floor((r.left / w) * REC_W) - 1);
+        var x1 = Math.min(REC_W, Math.ceil((r.right / w) * REC_W) + 1);
+        var j0 = Math.max(0, Math.floor((1 - r.bottom / h) * REC_H) - 1);
+        var j1 = Math.min(REC_H, Math.ceil((1 - r.top / h) * REC_H) + 1);
+        if (x1 - x0 < 1 || j1 - j0 < 1) return;
+        recMask = { x0: x0, x1: x1, j0: j0, j1: j1 };
+    }
+
+    function recSample() {
+        if (!recMode) return;
+        try {
+            if (postReady && compProg) {
+                // 默认帧缓冲是 MSAA 的，规范不允许「多重采样源 + 缩放」的 blit
+                // （实测 GL_INVALID_OPERATION，录到全黑）。改为用合成着色器
+                // 直接降采样到录制纹理——采到的仍是「合成之后的画面」，
+                // 比退回 blit 更贴近屏幕。
+                gl.bindFramebuffer(gl.FRAMEBUFFER, recFbo);
+                gl.viewport(0, 0, REC_W, REC_H);
+                gl.disable(gl.DEPTH_TEST);
+                gl.depthMask(false);
+                gl.disable(gl.BLEND);
+                gl.useProgram(compProg);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+                gl.uniform1i(postLoc.comp.scene, 0);
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, bloomTexB);
+                gl.uniform1i(postLoc.comp.bloom, 1);
+                drawPostQuad(postLoc.attr.comp);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.enable(gl.DEPTH_TEST);
+                gl.depthMask(true);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, recFbo);
+                gl.readPixels(0, 0, REC_W, REC_H, gl.RGBA, gl.UNSIGNED_BYTE, recPix);
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+            } else {
+                var w = gl.drawingBufferWidth;
+                var h = gl.drawingBufferHeight;
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+                gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, recFbo);
+                gl.blitFramebuffer(0, 0, w, h, 0, 0, REC_W, REC_H, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, recFbo);
+                gl.readPixels(0, 0, REC_W, REC_H, gl.RGBA, gl.UNSIGNED_BYTE, recPix);
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+            }
+        } catch (e) {
+            recMode = "off";
+            window.__recErr = "sample: " + (e && e.message);
+            return;
+        }
+        var sum = 0;
+        var cnt = 0;
+        var hash = 0x811c9dc5;
+        var m = recMask;
+        recHist.fill(0);
+        for (var j = 0; j < REC_H; j++) {
+            for (var x = 0; x < REC_W; x++) {
+                var idx = j * REC_W + x;
+                if (m && x >= m.x0 && x < m.x1 && j >= m.j0 && j < m.j1) {
+                    recLumBuf[idx] = -1;
+                    continue;
+                }
+                var o = idx * 4;
+                var r8 = recPix[o];
+                var g8 = recPix[o + 1];
+                var b8 = recPix[o + 2];
+                var rl = r8 / 255;
+                var gc = g8 / 255;
+                var bl = b8 / 255;
+                rl = rl <= 0.04045 ? rl / 12.92 : Math.pow((rl + 0.055) / 1.055, 2.4);
+                gc = gc <= 0.04045 ? gc / 12.92 : Math.pow((gc + 0.055) / 1.055, 2.4);
+                bl = bl <= 0.04045 ? bl / 12.92 : Math.pow((bl + 0.055) / 1.055, 2.4);
+                var L = 0.2126 * rl + 0.7152 * gc + 0.0722 * bl;
+                recLumBuf[idx] = L;
+                sum += L;
+                cnt++;
+                recHist[(0.2126 * r8 + 0.7152 * g8 + 0.0722 * b8) | 0]++;
+                hash = Math.imul(hash ^ r8, 16777619);
+                hash = Math.imul(hash ^ g8, 16777619);
+                hash = Math.imul(hash ^ b8, 16777619);
+            }
+        }
+        recLuma = cnt ? sum / cnt : 0;
+        recHash = hash >>> 0;
+
+        // 亮区分位：暗场里平均亮度被大片背景稀释，眼睛跟的是地形亮部。
+        // 第 90 百分位比均值更接近「看得见的那部分有多亮」。
+        var need = cnt * 0.9;
+        var acc2 = 0;
+        recP90 = 0;
+        for (var hb = 0; hb < 256; hb++) {
+            acc2 += recHist[hb];
+            if (acc2 >= need) { recP90 = hb / 255; break; }
+        }
+
+        // 逐像素变化量：几何驱动的可视化，」动了多少「比」亮了多少「更接近观感。
+        // 同时它也是 WCAG 闪烁判据要的那个量：逐帧亮度变化。
+        var diff = 0;
+        var dn = 0;
+        for (var q = 0; q < REC_W * REC_H; q++) {
+            var cur = recLumBuf[q];
+            if (cur < 0) continue;
+            var pv = recPrevBuf[q];
+            if (pv >= 0) { diff += Math.abs(cur - pv); dn++; }
+        }
+        recMotion = dn ? diff / dn : 0;
+        var swap = recPrevBuf;
+        recPrevBuf = recLumBuf;
+        recLumBuf = swap;
+    }
+
+    function recPush() {
+        if (!REC) return;
+        recBuf.push([
+            recBuf.length,
+            Math.round(elapsed * 1000) / 1000,
+            Math.round(recLuma * 1e5) / 1e5,
+            recHash,
+            Math.round(punch * 1000) / 1000,
+            Math.round(sm.idle * 1000) / 1000,
+            Math.round(sm.energy * 1000) / 1000,
+            Math.round(rawBands[0] * 1000) / 1000,
+            Math.round(rawBands[1] * 1000) / 1000,
+            Math.round(rawBands[2] * 1000) / 1000,
+            Math.round(rawBands[3] * 1000) / 1000,
+            Math.round(rawBands[4] * 1000) / 1000,
+            Math.round(rawBands[5] * 1000) / 1000,
+            Math.round(rawBands[6] * 1000) / 1000,
+            Math.round(rawBands[7] * 1000) / 1000,
+            Math.round(sm.subBass * 1000) / 1000,
+            Math.round(sm.bass * 1000) / 1000,
+            Math.round(sm.lowMid * 1000) / 1000,
+            Math.round(sm.mid * 1000) / 1000,
+            Math.round(sm.highMid * 1000) / 1000,
+            Math.round(sm.presence * 1000) / 1000,
+            Math.round(sm.brill * 1000) / 1000,
+            Math.round(sm.air * 1000) / 1000,
+            Math.round(recP90 * 1000) / 1000,
+            Math.round(recMotion * 1e6) / 1e6
+        ]);
+    }
+
+    // 抓取器只认这个对象。dump() 返回「一行一帧」的定长数组：
+    // [帧号, 时间, 亮度, 哈希, punch, idle, energy, b0..b7, s0..s7]
+    var probe = {
+        seed: SEED,
+        stim: STIM,
+        fixed: FIXED,
+        rec: REC,
+        done: false,
+        mode: function () { return recMode; },
+        elapsed: function () { return elapsed; },
+        luma: function () { return recLuma; },
+        hash: function () { return recHash; },
+        bands: function () {
+            var a = [];
+            for (var i = 0; i < 8; i++) a.push(rawBands[i]);
+            return a;
+        },
+        dump: function () { return recBuf; },
+        // 空间场的状态：uniform 名查错、数组没上传、增益算成 0，三种故障
+        // 在画面上都表现为「什么也没发生」，只有数字能分开它们。
+        field: function () {
+            return {
+                spatial: spatialAmt, tail: tailAmt, pan: panAmt,
+                unis: { field: !!uni.uField, ripA: !!uni.uRipA, spatial: !!uni.uSpatial },
+                gain: [0, 1, 2, 3, 4, 5, 6, 7].map(function (b) { return fieldData[b * 4 + 2]; }),
+                az: [0, 1, 2, 3, 4, 5, 6, 7].map(function (b) { return fieldData[b * 4]; })
+            };
+        },
+        // 节拍器读数：BPM 是否锁定、相位、脉冲、距上一拍多久。
+        // 节奏映射的正确性没法靠肉眼判断——只能读数字。
+        beat: function () {
+            return {
+                bpm: beatBpm, conf: beatConf, phase: beatPhase, pulse: beatPulse,
+                count: beatCount, since: elapsed - lastBeatAt, onset: fluxNow
+            };
+        },
+        // 平滑后的驱动量。画面「为什么不动」这类问题只有数字能回答：
+        // uniform 名查错、包络卡在 0、能量被静音判据吃掉，三种故障在截图
+        // 上长得一模一样。idle 与 energy 尤其要看——它们决定静止波让不让位。
+        state: function () {
+            return {
+                bands: [sm.subBass, sm.bass, sm.lowMid, sm.mid,
+                    sm.highMid, sm.presence, sm.brill, sm.air],
+                energy: sm.energy, idle: sm.idle, centroid: sm.centroid,
+                density: sm.density, punch: punch, beatPulse: beatPulse,
+                spatial: spatialAmt, tail: tailAmt,
+                cam: { dist: cam.dist, x: camPos[0], y: camPos[1], z: camPos[2] },
+                motion: motion, reduced: reduced
+            };
+        },
+        // 高光探针读数（0..1）。只有测量台会调它；一旦调用就会 readPixels，
+        // 所以生产路径上绝不能碰——这也是它没被接进主循环的原因。
+        bloomProbe: function () {
+            if (!lastProbeTex || !probeFboA) return null;
+            var fbo = lastProbeTex === probeTexA ? probeFboA : probeFboB;
+            gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo);
+            var px = new Uint8Array(4);
+            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+            gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+            return px[0] / 255;
+        },
+        clear: function () { recBuf = []; probe.done = false; }
+    };
+
+    // ── 波前与流星 ───────────────────────────────────────────
+    // 一个槽位由两个 vec4 描述：
+    //   A = (x, z, 发射时刻, 带符号强度)   —— w 为负表示流星撞击
+    //   B = (dirX, dirZ, 指向锐度, 归一化频率)
+    // 分成两条 uniform 而不是一条：指向与频率只在发射时定一次，
+    // 而 A 的强度会被槽位复用覆盖——分开后语义清楚，也不用为了
+    // 塞进 vec4 去砍宽度或精度。
+    var ripA = new Float32Array(8 * 4);
+    var ripB = new Float32Array(8 * 4);
+    var ripIdx = 0;
+    var lastRippleAt = -10;
+    var lastMeteorAt = -10;
+    var prevBass = 0;
+    var prevHigh = 0;
+    var prevSub = 0;
+    var punch = 0;
+
+    // age 用来把涟漪直接放到「已经扩散到某个半径」的状态，
+    // 离线截图只能拿一帧，没有它就只能拍到半径 0 的那个点。
+    //
+    // 后三个参数是空间化改造新增的：
+    //   freq  归一化频段（0 低频 → 1 高频），决定传播速度 / 空气吸收 / 波包宽度
+    //   dir   指向性方向（世界 XZ 平面上的单位向量）
+    //   focus 指向锐度（0 = 全向，1 = 强指向）
+    function spawnRipple(x, z, strength, meteor, age, freq, dirX, dirZ, focus) {
+        var o = ripIdx * 4;
+        ripA[o] = x;
+        ripA[o + 1] = z;
+        ripA[o + 2] = elapsed - (age || 0);
+        ripA[o + 3] = meteor ? -strength : strength;
+        ripB[o] = dirX || 0;
+        ripB[o + 1] = dirZ || 0;
+        ripB[o + 2] = focus || 0;
+        ripB[o + 3] = freq == null ? 0.28 : freq;
+        ripIdx = (ripIdx + 1) % 8;
+    }
+
+    var METEOR_MAX = 7;
+    var meteors = [];
+    for (var mi = 0; mi < METEOR_MAX; mi++) {
+        meteors.push({ active: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 });
+    }
+    var meteorVerts = new Float32Array(METEOR_MAX * 6 * 2 * 4); // 7 颗 × 6 段 × 2 点 × (xyz+fade)
+
+    function spawnMeteor(strength) {
+        for (var i = 0; i < METEOR_MAX; i++) {
+            var m = meteors[i];
+            if (m.active) continue;
+            var r = 12 + rnd() * 42;
+            var a = rnd() * Math.PI * 2;
+            m.x = Math.cos(a) * r;
+            m.z = Math.sin(a) * r;
+            m.y = 34 + rnd() * 16;
+            // 斜向落下，别垂直——垂直的轨迹读不出速度
+            m.vx = (rnd() - 0.5) * 6;
+            m.vz = (rnd() - 0.5) * 6;
+            m.vy = -(26 + rnd() * 10);
+            m.active = true;
+            m.strength = strength;
+            return;
+        }
+    }
+
+    function stepMeteors(dt) {
+        var w = 0;
+        for (var i = 0; i < METEOR_MAX; i++) {
+            var m = meteors[i];
+            if (!m.active) continue;
+            m.x += m.vx * dt;
+            m.y += m.vy * dt;
+            m.z += m.vz * dt;
+
+            if (m.y <= 0.4) {
+                m.active = false;
+                // 流星是高频事件：频率权重高 → 波前窄、快、早衰减，
+                // 落地瞬间那一圈读起来是「脆」的，而不是一记闷响。
+                // 全向（focus 0）：它砸的是地面，不是有朝向的声源。
+                spawnRipple(m.x, m.z, 0.85, true, 0, 0.86, 0, 0, 0);
+                continue;
+            }
+
+            // 6 段光尾：越靠后越淡，速度方向即拖尾方向。
+            // 尾迹长度必须按速度归一化——直接乘速度的话，快流星的尾巴长、
+            // 慢流星的尾巴短，而实际速度区间只有 26–36，视觉上全成了「一闪而过的点」。
+            // 这里固定 6 个世界单位，看起来才是一道光而不是一颗子弹。
+            var spd = Math.sqrt(m.vx * m.vx + m.vy * m.vy + m.vz * m.vz) || 1;
+            var tail = 6.0 / spd;
+            var tx = m.x - m.vx * tail, ty = m.y - m.vy * tail, tz = m.z - m.vz * tail;
+            for (var s = 0; s < 6; s++) {
+                var f0 = 1 - s / 6;
+                var f1 = 1 - (s + 1) / 6;
+                var o = w * 8;
+                meteorVerts[o] = m.x + (tx - m.x) * (s / 6);
+                meteorVerts[o + 1] = m.y + (ty - m.y) * (s / 6);
+                meteorVerts[o + 2] = m.z + (tz - m.z) * (s / 6);
+                meteorVerts[o + 3] = f0 * f0;
+                meteorVerts[o + 4] = m.x + (tx - m.x) * ((s + 1) / 6);
+                meteorVerts[o + 5] = m.y + (ty - m.y) * ((s + 1) / 6);
+                meteorVerts[o + 6] = m.z + (tz - m.z) * ((s + 1) / 6);
+                meteorVerts[o + 7] = f1 * f1;
+                w++;
+            }
+        }
+        return w * 2;   // 顶点数
+    }
+
+    // ── 标题与元信息 ─────────────────────────────────────────
+    var CJK = /[\u2e80-\u9fff\u3040-\u30ff\uac00-\ud7af]/;
+
+    function pad2(n) {
+        var v = parseInt(n, 10);
+        if (isNaN(v)) return '';
+        return v < 10 ? '0' + v : String(v);
+    }
+
+    function setTitle(text) {
+        if (!ui.title) return;
+        var str = String(text || '');
+        ui.title.textContent = str;
+        ui.title.classList.toggle('is-latin', !CJK.test(str));
+        ui.title.classList.add('is-enter');
+        void ui.title.offsetWidth;
+        requestAnimationFrame(function () {
+            ui.title.classList.remove('is-enter');
+        });
+    }
+
+    // ── 收藏 ─────────────────────────────────────────────────
+    // 播放器没有账号体系，收藏只能落在本机。用 artist+name 当键而不是下标：
+    // 歌单顺序会随 Meting 返回变化，下标会把「收藏」错挂到别的歌上。
+    var LIKE_KEY = 'firefly-music-liked';
+    var liked = {};
+    try {
+        liked = JSON.parse(localStorage.getItem(LIKE_KEY) || '{}') || {};
+    } catch (err) {
+        liked = {};
+    }
+
+    function likeId(t) {
+        return (t.artist || '') + '\u0000' + (t.name || '');
+    }
+
+    function syncLike() {
+        if (!ui.like) return;
+        var s = mgr.getState();
+        var on = !!(s.track && liked[likeId(s.track)]);
+        var label = on ? (i18nCfg.unlike || 'Remove from favorites') : (i18nCfg.like || 'Add to favorites');
+        ui.like.dataset.on = on ? 'true' : 'false';
+        ui.like.setAttribute('aria-pressed', on ? 'true' : 'false');
+        ui.like.setAttribute('aria-label', label);
+        ui.like.title = label;
+    }
+
+    function toggleLike() {
+        var s = mgr.getState();
+        if (!s.track) return;
+        var id = likeId(s.track);
+        if (liked[id]) delete liked[id];
+        else liked[id] = 1;
+        try {
+            localStorage.setItem(LIKE_KEY, JSON.stringify(liked));
+        } catch (err) {}
+        syncLike();
+        if (ui.like && !reduced) {
+            ui.like.classList.remove('is-pop');
+            void ui.like.offsetWidth;
+            ui.like.classList.add('is-pop');
+        }
+    }
+
+    function setThumb(src) {
+        if (!ui.thumb) return;
+        if (!src) {
+            ui.thumb.removeAttribute('src');
+            ui.thumb.classList.remove('is-ready');
+            ui.thumb.classList.add('is-empty');
+            return;
+        }
+        ui.thumb.classList.remove('is-empty', 'is-ready');
+        ui.thumb.onload = function () { ui.thumb.classList.add('is-ready'); };
+        ui.thumb.src = src;
+    }
+
+    function syncMeta() {
+        var s = mgr.getState();
+        var t = s.track;
+        if (!t) return;
+
+        setTitle(t.name);
+        if (ui.artist) ui.artist.textContent = t.artist || '';
+        if (ui.meta) {
+            var no = t.trackNo != null ? t.trackNo : s.currentIndex + 1;
+            var total = s.playlist ? s.playlist.length : 0;
+            ui.meta.textContent = total > 0 ? ('TRACK ' + pad2(no) + ' / ' + pad2(total)) : '';
+        }
+        // 换曲时一次性把色彩算到底，不做插值——否则新歌前 3 秒
+        // 还在用上一首的配色，换曲的画面对不上
+        computePalette();
+        for (var pi = 0; pi < 3; pi++) {
+            pal.bg[pi] = palT.bg[pi];
+            pal.edge[pi] = palT.edge[pi];
+            pal.core[pi] = palT.core[pi];
+            pal.rip[pi] = palT.rip[pi];
+            pal.peak[pi] = palT.peak[pi];
+        }
+        syncBackdrop(true);
+        setThumb(t.pic);
+        syncLike();
+    }
+
+    // ── 主循环 ───────────────────────────────────────────────
+    var idleTimer = 0;
+    var reduced = false;
+    var motion = 1;
+    var lastPct = '';
+    var lastPctInt = -1;
+    var lastCur = '';
+    var lastDur = '';
+    var lastPlaying = null;
+    var hueShiftAccum = 0;
+
+    if (window.matchMedia) {
+        var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+        reduced = mq.matches;
+        if (mq.addEventListener) {
+            mq.addEventListener('change', function (e) {
+                reduced = e.matches;
+                if (isOpen) setMotion();
+            });
+        }
+    }
+
+    function setMotion() {
+        motion = reduced ? 0.14 : 1;
+    }
+
+    // ── 离线验证钩子 ─────────────────────────────────────────
+    // ?t=<秒>  冻结到指定时刻：首帧就是稳态，截图可复现
+    // ?rm=0    忽略 prefers-reduced-motion（headless Chrome 默认报 reduce，
+    //          不覆盖的话每一张验证图都跑在降级分支上）
+    var SEEK = -1;
+    (function () {
+        var m = /[?&]t=([\d.]+)/.exec(location.search);
+        if (m) SEEK = parseFloat(m[1]);
+        if (/[?&]rm=0\b/.test(location.search)) {
+            reduced = false;
+            setMotion();
+        }
+    })();
+
+    // 把平滑器的状态直接跳到目标值，跳过收敛过程
+    function primeSmoothing() {
+        for (var i = 0; i < SPEC_N; i++) spec[i] = debugSpec(i, elapsed);
+        readBands(0.016, false);
+        for (var b = 0; b < 8; b++) {
+            fastEnv[b] = rawBands[b];
+            bodyEnv[b] = rawBands[b];
+            tranEnv[b] = 0;
+            prevBandForFlux[b] = rawBands[b];
+        }
+        sm.subBass = rawBands[0];
+        sm.bass = rawBands[1];
+        sm.lowMid = rawBands[2];
+        sm.mid = rawBands[3];
+        sm.highMid = rawBands[4];
+        sm.presence = rawBands[5];
+        sm.brill = rawBands[6];
+        sm.air = rawBands[7];
+        sm.centroid = centroidRaw;
+        sm.energy = 0.55;
+        sm.idle = 0.16;
+        // 拍相也直接落到稳态：离线截图只有一帧，不能从相位 0 慢慢爬
+        beatPhase = 0.18;
+        beatPulse = 0.4;
+    }
+
+    // ── 固定步长积分器 ───────────────────────────────────────
+    // 所有与时间相关的包络、弹簧、拍相都在这里推进，步长恒为 1/120s。
+    // 渲染帧率只决定「一帧里跑几步」，不决定物理行为——这是「同一套
+    // 参数在 60Hz 与 144Hz 上观感一致」的前提。变步长积分时，弹簧的
+    // 阻尼比与包络的时间常数都会随帧率漂移，表现为「高刷屏上更轻飘」。
+    var SIM_STEP = 1 / 120;
+    // 上限 10 步 = 83ms，正好覆盖 dt 的 80ms 封顶。取 4 步的话，
+    // 一旦掉到 12fps 以下，elapsed 会按 80ms 前进而包络只积分 33ms，
+    // 两条时间轴就此分叉——表现为「地形慢慢动，涟漪飞快跑」。
+    var SIM_MAX = 10;
+    var simAcc = 0;
+    var lastEnergy = { level: 0, pan: 0, width: 0 };
+
+    function integrate(h, playing) {
+        // ① 快/体双路跟随：瞬态分离
+        for (var b = 0; b < 8; b++) {
+            var tgt = rawBands[b];
+            var tau = BAND_TAU[b];
+            fastEnv[b] = follow(fastEnv[b], tgt, h, 0.008, 0.055);
+            bodyEnv[b] = follow(bodyEnv[b], tgt, h, tau[0], tau[1]);
+            var tr = fastEnv[b] - bodyEnv[b];
+            if (tr < 0) tr = 0;
+            // 瞬态余量自己也会衰减，τ=90ms：够亮一下，不够闪
+            var decay = tranEnv[b] * Math.exp(-h / 0.09);
+            tranEnv[b] = tr > decay ? tr : decay;
+        }
+        sm.subBass = bodyEnv[0];
+        sm.bass = bodyEnv[1];
+        sm.lowMid = bodyEnv[2];
+        sm.mid = bodyEnv[3];
+        sm.highMid = bodyEnv[4];
+        sm.presence = bodyEnv[5];
+        sm.brill = bodyEnv[6];
+        sm.air = bodyEnv[7];
+
+        // 质心跟着「音色」走而不是跟着「音符」走：150ms 上升、400ms 回落，
+        // 比任何单个频段都慢一档。它要的是这一段配器的大致亮度，
+        // 不是这一次瞬态的尖端。
+        sm.centroid = follow(sm.centroid, centroidRaw, h, 0.15, 0.40);
+
+        // ② 音色特征。sharpness 原本是「每帧的亮度增量 ×10」，改成
+        // 「每秒的亮度增量」——否则帧率一变，同一个和声进行会给出
+        // 完全不同的尖锐度。
+        var totalE = 0;
+        for (var bi = 0; bi < 8; bi++) totalE += rawBands[bi];
+        var lowSum = rawBands[0] + rawBands[1] + rawBands[2] + rawBands[3];
+        var highSum = rawBands[5] + rawBands[6] + rawBands[7];
+        var warmth = totalE > 0.001 ? lowSum / totalE : 0.5;
+        var bright = totalE > 0.001 ? highSum / totalE : 0.2;
+        var brightRate = (bright - prevBrightness) / h;
+        prevBrightness = bright;
+
+        var above = 0;
+        var avg = totalE / 8;
+        for (var ai = 0; ai < 8; ai++) if (rawBands[ai] > avg) above++;
+        sm.density = follow(sm.density, above / 8, h, 0.30, 0.30);
+        sm.warmth = follow(sm.warmth, Math.min(1, warmth), h, 0.30, 0.30);
+        sm.brightness = follow(sm.brightness, Math.min(1, bright * 1.6), h, 0.30, 0.30);
+        sm.sharpness = Math.max(0.15, Math.min(1, Math.max(0, brightRate) * 0.16));
+
+        // 离线模式没有真实音频，e.level 恒为 0，会让「空闲波」一直全开，
+        // 地形被底噪抬高一截——那样调出来的构图和真实播放不是一回事。
+        // 注入模式同理：能量取注入频段的均值，空闲波才会按预期让位。
+        var lvl = STIM ? (totalE / 8) : DEBUG_SPEC ? 0.55 : (lastEnergy.level || 0);
+        sm.energy = follow(sm.energy, lvl, h, 0.10, 0.28);
+
+        // 空闲波：有真实音频信号就让位给频段驱动，否则地形会同时被
+        // 「底噪」和「音乐」推两遍，柱子永远降不下去。暂停/静默时再淡回来。
+        var idleTarget = (playing && sm.energy > 0.05) ? 0.16 : 1.0;
+        sm.idle = follow(sm.idle, idleTarget, h, 0.6, 0.9);
+
+        // ③ 色相漂移：暖音乐往橙推，亮音乐往青推
+        var hueShiftT = sm.warmth * 12 - sm.brightness * 10;
+        hueShiftAccum = follow(hueShiftAccum, hueShiftT, h, 0.35, 0.35);
+        hueShift = hueShiftAccum;
+
+        // ④ 拍相与脉冲
+        if (beatBpm > 0 && playing) {
+            // 速度可信时用锁相环推进；相位跨越 0 就是「拍点到了」
+            var prevPhase = beatPhase;
+            beatPhase += h * (beatBpm / 60);
+            if (beatPhase >= 1) {
+                beatPhase -= 1;
+                // 拍点幅度随局部能量走：安静段落不该砸出满幅涟漪
+                onBeat(0.55 + Math.min(0.45, bodyEnv[0] * 0.9));
+            }
+            if (prevPhase > beatPhase && beatPhase > 0.5) beatPhase = 0;
+        } else {
+            // 未锁速：保持自由相位的呼吸，只是不触发拍事件
+            beatPhase = (beatPhase + h * 0.9) % 1;
+        }
+        beatPulse *= Math.exp(-h / 0.115);
+        if (beatPulse < 0.001) beatPulse = 0;
+
+        // ⑤ 节拍冲击衰减（触发在帧里，衰减在积分里）
+        punch *= Math.exp(-h / 0.135);
+        if (punch < 0.001) punch = 0;
+
+        // ⑥ 相机：临界阻尼弹簧而不是一阶低通
+        // 一阶低通在指针快速移动时表现为「匀速跟随、突然停住」；
+        // 带速度状态的弹簧会先加速、到位后轻微减速，手感更接近真实云台。
+        var w = 5.65;                     // ω = 2π·0.9Hz
+        var ax = w * w * (cam.px - cam.sx) - 2 * w * cam.svx;
+        cam.svx += ax * h;
+        cam.sx += cam.svx * h;
+        var ay = w * w * (cam.py - cam.sy) - 2 * w * cam.svy;
+        cam.svy += ay * h;
+        cam.sy += cam.svy * h;
+
+        // ⑦ 方位场（含立体声 pan/width）
+        updateField(h, camRight[0], lastEnergy.pan || 0, lastEnergy.width || 0);
+    }
+
+    function frame(ts) {
+        if (!isOpen) return;
+        var dtMs = lastTs ? Math.min(80, ts - lastTs) : 16;
+
+        // 暂停时降到 ~30fps：地形只剩 idle 波，60fps 和 30fps 肉眼无差，
+        // 但功耗差一倍。不更新 lastTs，dtMs 会自然累积到阈值，动画速度不变。
+        // 只在「确定处于暂停」（lastPlaying === false）时跳帧，
+        // 首帧 lastPlaying 还是 null，必须渲染。
+        if (lastPlaying === false && !DEBUG_SPEC && !STIM && !LIVE && dtMs < 32) {
+            // 暂停后 canvas 不再重绘，但唱盘还要把最后一点转速滑完
+            stepSpin(dtMs / 1000, false);
+            rafId = requestAnimationFrame(frame);
+            return;
+        }
+
+        lastTs = ts;
+        // 固定步长：测量以帧为单位，「升到 63% 用了几帧」不随机器快慢变化。
+        var dt = FIXED ? 1 / 60 : dtMs / 1000;
+        if (SEEK < 0) elapsed += dt * motion;
+
+        var s = mgr.getState();
+        var e = mgr.getEnergy();
+        lastEnergy = e;
+        // 注入模式下没有播放状态，但涟漪/冲击/流星必须照常触发，
+        // 否则测的是一个被静音了的效果链
+        var playing = STIM ? true : s.isPlaying;
+
+        stepSpin(dt, s.isPlaying);
+
+        // 频谱与频段
+        // 三条来源，优先级从高到低：注入（输入已知）→ 合成（形态稳定）
+        // → 分析器（真实音频，headless 下恒为 0）
+        if (STIM) {
+            fillStim();
+        } else if (DEBUG_SPEC) {
+            for (var di = 0; di < SPEC_N; di++) spec[di] = debugSpec(di, elapsed);
+        } else {
+            mgr.getSpectrum(spec);
+        }
+        readBands(dt, true);
+
+        // ── ② 频谱通量与拍点包络（每分析帧一次）─────────────
+        // 通量取正半波：只关心「变亮了多少」，不关心绝对电平。
+        // 这样副歌整体更响不会被误判成密集鼓点。
+        var flux = 0;
+        for (var fb = 0; fb < 8; fb++) {
+            var d = rawBands[fb] - prevBandForFlux[fb];
+            if (d > 0) flux += d * FLUX_W[fb];
+            prevBandForFlux[fb] = rawBands[fb];
+        }
+        // 指数平滑一点点，避免单帧噪声把自相关带偏
+        fluxNow += (flux - fluxNow) * 0.55;
+
+        // 通量门限与 onset：均值 + 2σ 的自适应判据，随曲风自己校准。
+        // 命中时做两件事——把拍相往拍点拽一点，以及（在尚未锁速时）
+        // 直接驱动一次脉冲，保证「还没算出 BPM」的前几秒也有节奏感。
+        fluxEma += (flux - fluxEma) * 0.05;
+        fluxDev += (Math.abs(flux - fluxEma) - fluxDev) * 0.05;
+        var fluxTrig = fluxEma + 2.0 * fluxDev + 0.015;
+        if (flux > fluxTrig && elapsed - lastOnsetAt > 0.10) {
+            lastOnsetAt = elapsed;
+            lockPhase();
+            if (!beatBpm) onBeat(Math.min(1, (flux / (fluxTrig + 0.12)) * 0.55));
+        }
+        // 每 0.6s 估一次速度：自相关是 O(窗口×滞后)，600ms 一次足够，
+        // 逐帧算纯属浪费——曲目的速度不会在 16ms 内变化。
+        if (playing && elapsed - tempoAt > 0.6) {
+            tempoAt = elapsed;
+            detectTempo();
+        }
+
+        onsetAcc += dt;
+        var onsetStep = 1 / ONSET_HZ;
+        var pushed = 0;
+        while (onsetAcc >= onsetStep && pushed < 4) {
+            pushOnset(fluxNow);
+            onsetAcc -= onsetStep;
+            pushed++;
+        }
+
+        // ── ③ 固定步长积分 ────────────────────────────────────
+        // 120Hz 固定步长：缓动曲线、弹簧、包络都跑在同一个时间网格上。
+        // 60Hz 屏上每帧走 2 步，144Hz 屏上走 0.83 步——观感完全一致。
+        // 这是「同样的参数在 60Hz 与 144Hz 上看起来一样」的唯一做法；
+        // 用变步长积分时，弹簧的阻尼比会随帧率漂移。
+        simAcc += dt;
+        var steps = 0;
+        while (simAcc >= SIM_STEP && steps < SIM_MAX) {
+            integrate(SIM_STEP, playing);
+            simAcc -= SIM_STEP;
+            steps++;
+        }
+        // 追帧时丢掉剩余时间而不是补更多步：补步会越补越慢，形成雪崩
+        if (steps >= SIM_MAX) simAcc = 0;
+
+        computePalette();
+        lerpPalettes(dt);
+        syncBackdrop(false);
+
+        // 涟漪触发。优先走拍点（已锁速时），未锁速才退回上升沿判据。
+        // 拍点触发的好处不只是准：它发生在「预测的拍点」上，而不是
+        // 「检测到拍点之后」——省掉一整个分析窗口的延迟，鼓点一落
+        // 波前就已经在地形上了。
+        if (playing) {
+            var rr = 0, ra = 0, power = 0, sx = 0, sz = 0, inv = 0;
+            if (beatPending > 0.02 && beatConf > 0.22) {
+                power = Math.min(1, 0.35 + beatPending * 0.75);
+                rr = 8 + rnd() * 34;
+                ra = rnd() * Math.PI * 2;
+                sx = Math.cos(ra) * rr;
+                sz = Math.sin(ra) * rr;
+                inv = 1 / (rr || 1);
+                spawnRipple(sx, sz, power, false, 0, 0.12, -sx * inv, -sz * inv, 0.55);
+                beatPending = 0;
+            } else if (!beatBpm) {
+                // 未锁速：低频上升沿，或低频持续走强。只判沿会在密集鼓点里
+                // 永远等不到「回落再升」，只判能量又变成节拍器。
+                var rise = rawBands[1] - prevBass;
+                var hot = sm.bass > 0.46;
+                if ((rise > 0.045 || hot) && elapsed - lastRippleAt > 0.42) {
+                    lastRippleAt = elapsed;
+                    rr = 8 + rnd() * 32;
+                    ra = rnd() * Math.PI * 2;
+                    power = Math.min(1, Math.max(rise * 7, sm.bass * 0.75));
+                    sx = Math.cos(ra) * rr;
+                    sz = Math.sin(ra) * rr;
+                    inv = 1 / (rr || 1);
+                    spawnRipple(sx, sz, power, false, 0, 0.12, -sx * inv, -sz * inv, 0.55);
+                }
+            }
+            beatPending = 0;
+            // 高频爆发 → 流星。减少动态时直接不生成：
+            // 从天而降的物体是运动病风险最高的一类动效。
+            var hRise = rawBands[6] + rawBands[7] - prevHigh;
+            if (hRise > 0.09 && !reduced && elapsed - lastMeteorAt > 2.2) {
+                lastMeteorAt = elapsed;
+                spawnMeteor(0.9);
+            }
+        }
+        prevBass = rawBands[1];
+        prevHigh = rawBands[6] + rawBands[7];
+
+        // 节拍冲击：两条来源取最大。
+        // ① 超低频上升沿——瞬态兜底，未锁速时保证有打击感；
+        // ② 瞬态包络 + 拍脉冲——由节拍器直接给，幅度可预测、不抖。
+        // 衰减放在积分器里（τ=135ms），这里只负责抬升。
+        var subRise = rawBands[0] - prevSub;
+        if (subRise > 0.012) punch = Math.min(1, punch + subRise * 3.0);
+        var beatPunch = Math.min(1, beatPulse * 0.55 + tranEnv[0] * 0.5 + tranEnv[1] * 0.25);
+        if (beatPunch > punch) punch = beatPunch;
+        prevSub = rawBands[0];
+
+        // 相机：弹簧在积分器里推进（见 integrate），这里直接取矩阵。
+        // 方位场也在积分器里更新——它用的是上一帧的相机右向量，
+        // 对一条时间常数 0.5s 的参数来说，16ms 的滞后不可见。
+        updateCamera(elapsed);
+
+        // 绘制
+        if (gl) {
+            // 启用后处理时先画进离屏纹理，最后一步再合成到屏幕；
+            // 否则直绘（降级路径，画面与旧版完全一致）
+            gl.bindFramebuffer(gl.FRAMEBUFFER, postReady ? sceneFbo : null);
+            gl.clearColor(pal.bg[0], pal.bg[1], pal.bg[2], 1);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.useProgram(prog);
+
+            gl.uniformMatrix4fv(uni.uMVP, false, vp);
+            set1f('uTime', elapsed);
+            set1f('uHalf', HALF);
+            set1f('uRange', 1.0);
+            set1f('uIdleWave', sm.idle);
+            set1f('uDensity', sm.density);
+            set1f('uSmoothness', 1 - sm.sharpness * 0.6);
+            set1f('uEnergy', sm.energy);
+            set1f('uSubBass', sm.subBass);
+            set1f('uBass', sm.bass);
+            set1f('uLowMid', sm.lowMid);
+            set1f('uMid', sm.mid);
+            set1f('uHighMid', sm.highMid);
+            set1f('uCentral', 1.0);
+            set1f('uRing', 1.0);
+            set1f('uFlow', 1.0);
+            set1f('uRiver', 1.0);
+            set1f('uSpike', 1.0);
+            set4fv('uRipA', ripA);
+            set4fv('uRipB', ripB);
+            set4fv('uField', fieldData);
+            set1f('uSpatial', spatialAmt);
+            set1f('uTail', tailAmt);
+            set1f('uMirror', QUALITY[tierIdx].mirror);
+
+            set3f('uBg', pal.bg);
+            set3f('uCamPos', camPos);
+            set3f('uCore', pal.core);
+            set3f('uEdge', pal.edge);
+            set3f('uRip', pal.rip);
+            set3f('uPeak', pal.peak);
+            set1f('uGlow', 1.0);
+            set1f('uPeakAmt', 0.88);
+            set1f('uSharp', sm.sharpness);
+            set1f('uAir', sm.air * 0.8);
+            set1f('uBrill', sm.brill * 0.7);
+            set1f('uPres', sm.presence * 0.6);
+            set1f('uPunch', punch);
+            set1f('uPan', panAmt);
+
+            bindMainAttribs();
+
+            if (isGL2) {
+                gl.drawElementsInstanced(gl.TRIANGLES, INDEX_COUNT, gl.UNSIGNED_SHORT, 0, grid * grid);
+            } else {
+                extInst.drawElementsInstancedANGLE(gl.TRIANGLES, INDEX_COUNT, gl.UNSIGNED_SHORT, 0, grid * grid);
+            }
+
+            // 流星：加法混合，关深度写入（它们是光，不该遮挡地形）
+            var mCount = stepMeteors(dt);
+            if (mCount > 0 && meteorProg) {
+                gl.useProgram(meteorProg);
+                gl.uniformMatrix4fv(meteorUni.uMVP, false, vp);
+                gl.uniform3f(meteorUni.uColor, 1.0, 0.94, 0.78);
+                gl.bindBuffer(gl.ARRAY_BUFFER, meteorBuf);
+                gl.bufferData(gl.ARRAY_BUFFER, meteorVerts.subarray(0, mCount * 4), gl.DYNAMIC_DRAW);
+                bindMeteorAttribs();
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+                gl.depthMask(false);
+                gl.drawArrays(gl.LINES, 0, mCount);
+                gl.depthMask(true);
+                gl.disable(gl.BLEND);
+                gl.useProgram(prog);
+            }
+            // 后处理：必须在所有几何画完之后、逐帧采样之前。
+            // 它会切回默认帧缓冲，于是 rec 采到的就是「真正上了屏的那一帧」。
+            if (postReady) runPost();
+        }
+
+        // 进度与时间：只写真正变了的值。逐帧无条件写 textContent / aria
+        // 会持续触发样式重算，这是全屏层的主要 JS 成本（不是渲染）。
+        var progress = s.duration > 0 ? s.currentTime / s.duration : 0;
+        var pct = (progress * 100).toFixed(3);
+        if (pct !== lastPct) {
+            if (ui.bar) ui.bar.style.width = pct + '%';
+            if (ui.head) ui.head.style.left = pct + '%';
+            // 圆环进度：只读，和线性条同步。拖动仍走线性条——
+            // 在圆环上拖要算角度，手指还会挡住封面。
+            if (ui.ring) ui.ring.style.strokeDashoffset = String(RING_LEN * (1 - progress));
+            lastPct = pct;
+        }
+        var curStr = s.currentTimeStr || '0:00';
+        if (curStr !== lastCur) {
+            if (ui.cur) ui.cur.textContent = curStr;
+            lastCur = curStr;
+        }
+        var durStr = s.durationStr || '0:00';
+        if (durStr !== lastDur) {
+            if (ui.dur) ui.dur.textContent = durStr;
+            lastDur = durStr;
+        }
+        var pctInt = Math.round(progress * 100);
+        if (pctInt !== lastPctInt) {
+            if (ui.progress) ui.progress.setAttribute('aria-valuenow', String(pctInt));
+            lastPctInt = pctInt;
+        }
+
+        if (ui.toggle && s.isPlaying !== lastPlaying) {
+            lastPlaying = s.isPlaying;
+            ui.toggle.dataset.playing = s.isPlaying ? 'true' : 'false';
+            ui.toggle.setAttribute('aria-label', s.isPlaying ? LABEL_PAUSE : LABEL_PLAY);
+            // 卡片边缘的 accent 光只在播放时亮：这是「声音正在发生」的最短提示
+            if (ui.card) ui.card.classList.toggle('is-live', s.isPlaying);
+        }
+
+        // 逐帧记录：必须在所有 draw 之后、像素还在帧缓冲里的时候采，
+        // 否则拍到的是上一帧或空场——上一轮「连续三次截图字节数完全相同」
+        // 就是这个顺序错位造成的假阴性。
+        if (REC) {
+            recSample();
+            recPush();
+            if (elapsed >= STIM_DUR) {
+                probe.done = true;
+                stop();
+                return;
+            }
+        }
+
+        // ── 自适应画质 ────────────────────────────────────────
+        // 判据用「中位数」而不是平均值：平均值会被一次 GC 或一次着色器
+        // 编译拖到天上，而中位数只反映常态。窗口 48 帧（≈0.8s），
+        // 加 1.2s 冷却——换档本身要重建缓冲、重建后处理目标，比一帧贵得多。
+        //
+        // 升降都支持。原实现只降不升，打开时的一次编译抖动就会把它永久
+        // 钉在低档，之后 GPU 再有余量也回不来。
+        if (!FIXED && !GRID_OVERRIDE && TIER_OVERRIDE < 0) {
+            ftBuf[ftIdx] = dtMs;
+            ftIdx = (ftIdx + 1) % FT_N;
+            if (ftFill < FT_N) ftFill++;
+            frameCount++;
+            if (frameCount >= 48 && elapsed - lastTierAt > 1.2) {
+                frameCount = 0;
+                var med = medianFrameMs();
+                if (med > 26 && tierIdx < QUALITY.length - 1) {
+                    setTier(tierIdx + 1);
+                } else if (med < 15.5 && tierIdx > 0 && upSteps < 2) {
+                    // 升档阈值比降档严得多（15.5ms ≈ 65fps），且最多回弹两次，
+                    // 否则会在两档之间来回抖
+                    upSteps++;
+                    setTier(tierIdx - 1);
+                }
+            }
+        }
+
+        if (started) rafId = requestAnimationFrame(frame);
+    }
+
+    var FT_N = 48;
+    var ftBuf = new Float32Array(FT_N);
+    var ftTmp = new Float32Array(FT_N);
+    var ftIdx = 0;
+    var ftFill = 0;
+    var frameCount = 0;
+    var lastTierAt = -9;
+    var upSteps = 0;
+
+    function medianFrameMs() {
+        var n = Math.min(ftFill, FT_N);
+        for (var i = 0; i < n; i++) ftTmp[i] = ftBuf[i];
+        // 插入排序：n=48 时约 500 次比较，比 Array.sort 的闭包开销还低
+        for (var a = 1; a < n; a++) {
+            var v = ftTmp[a];
+            var b = a - 1;
+            while (b >= 0 && ftTmp[b] > v) { ftTmp[b + 1] = ftTmp[b]; b--; }
+            ftTmp[b + 1] = v;
+        }
+        return n ? ftTmp[n >> 1] : 16;
+    }
+
+    // 换档：网格密度变了，柱体几何必须跟着重建——柱宽是按格距算的，
+    // 只换实例缓冲会让柱子变成一排细牙签（这是原实现的一个隐性缺陷）。
+    // 同时后处理目标要按新的辉光倍率重建，分辨率要按新的预算重算。
+    function setTier(n) {
+        tierIdx = Math.max(0, Math.min(QUALITY.length - 1, n));
+        lastTierAt = elapsed;
+        ftFill = 0;
+        ftIdx = 0;
+        if (!gl) return;
+        if (!GRID_OVERRIDE) {
+            grid = QUALITY[tierIdx].grid;
+            cell = REACH / grid;
+            var geo = buildGeometry();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf.pos);
+            gl.bufferData(gl.ARRAY_BUFFER, geo.pos, gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf.nrm);
+            gl.bufferData(gl.ARRAY_BUFFER, geo.nrm, gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf.uv);
+            gl.bufferData(gl.ARRAY_BUFFER, geo.uv, gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geo.idx, gl.STATIC_DRAW);
+        }
+        uploadGrid(buildGrid(pickGrid()));
+        // 辉光倍率可能变了：强制重建后处理目标
+        postReady = false;
+        resize();
+    }
+
+    function set1f(name, v) {
+        if (uni[name]) gl.uniform1f(uni[name], v);
+    }
+
+    function set3f(name, arr) {
+        if (uni[name]) gl.uniform3f(uni[name], arr[0], arr[1], arr[2]);
+    }
+
+    function set4fv(name, arr) {
+        if (uni[name]) gl.uniform4fv(uni[name], arr);
+    }
+
+    // 首帧同步渲染：打开全屏层时 rAF 要等下一帧，中间会闪一次空场；
+    // 同步跑一遍既消掉这个空档，也让只给很少几帧的离线截图能拍到内容
+    var started = false;
+
+    function start() {
+        if (started) return;
+        started = true;
+        lastTs = 0;
+        setMotion();
+        resize();
+        frame(16);
+    }
+
+    function stop() {
+        started = false;
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
+    }
+
+    // ── 开合 ─────────────────────────────────────────────────
+    function open() {
+        if (isOpen) return;
+        // mgr 可能还没初始化：整个组件脚本先于 MusicManager 执行时，
+        // window.__fireflyMusic 存在但 getState 还没挂上。
+        // 原写法无条件 mgr.getState()，带 ?mvz=1 访问会在这一步抛错。
+        var st0 = mgr && mgr.getState ? mgr.getState() : null;
+        if (!st0) return;
+        if (!st0.track && !DEBUG_OPEN) return;
+        isOpen = true;
+        el.classList.add('is-open');
+        el.removeAttribute('inert');
+        el.setAttribute('aria-hidden', 'false');
+        // 记住原值再改：直接 '' 会把别的浮层（比如图片灯箱）的滚动锁一起清掉
+        prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        // aria-modal 必须配焦点转移，否则读屏与键盘用户仍留在背后的面板里
+        lastFocus = document.activeElement;
+        if (!gl) initGL();
+        // 降级判据交给 CSS：canvas 元素始终在 DOM 里，失败时它只是一块
+        // 透明的空画布，靠元素存在与否分辨不出来。没有这一笔，用户看到的
+        // 是一个纯黑的对话框加一张功能完好的卡片——像是渲染挂了。
+        el.classList.toggle('has-gl', !!gl);
+        resize();
+        initRec();
+        syncMeta();
+        if (SEEK >= 0) {
+            elapsed = SEEK;
+            primeSmoothing();
+        }
+        pokeIdle();
+        start();
+        syncLike();
+        // 真实音频通道：headless 需要 --autoplay-policy=no-user-gesture-required，
+        // 且调用时序要晚于 analyser 的 resume()，否则拿到的是整片 0
+        if (LIVE) {
+            setTimeout(function () {
+                try {
+                    if (mgr && mgr.play) mgr.play();
+                } catch (e) {}
+            }, 400);
+        }
+        setTimeout(function () {
+            if (isOpen && ui.toggle) ui.toggle.focus({ preventScroll: true });
+        }, 80);
+    }
+
+    function close() {
+        if (!isOpen) return;
+        isOpen = false;
+        stop();
+        el.classList.remove('is-open', 'is-idle');
+        el.setAttribute('aria-hidden', 'true');
+        el.setAttribute('inert', '');
+        document.body.style.overflow = prevOverflow;
+        if (lastFocus && lastFocus.focus) {
+            // 原元素可能已被 Swup 换页移除，focus 会抛错
+            try { lastFocus.focus({ preventScroll: true }); } catch (e) {}
+            lastFocus = null;
+        }
+    }
+
+    function refresh() {
+        if (!isOpen) return;
+        if (!gl) initGL();
+        el.classList.toggle('has-gl', !!gl);
+        resize();
+        syncMeta();
+        if (!started) start();
+    }
+
+    // ── 空闲淡出 ─────────────────────────────────────────────
+    function pokeIdle() {
+        el.classList.remove('is-idle');
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(function () {
+            if (isOpen) el.classList.add('is-idle');
+        }, 3400);
+    }
+
+    // ── 点击涟漪：屏幕坐标反投影到 y=0 ───────────────────────
+    function spawnAtPointer(clientX, clientY) {
+        if (!gl) return;
+        var rect = ui.gl.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        var nx = (clientX - rect.left) / rect.width * 2 - 1;
+        var ny = 1 - (clientY - rect.top) / rect.height * 2;
+
+        // near / far 两点反投影，连线与地面求交
+        function unproject(z, out) {
+            var x = invVP[0] * nx + invVP[4] * ny + invVP[8] * z + invVP[12];
+            var y = invVP[1] * nx + invVP[5] * ny + invVP[9] * z + invVP[13];
+            var w = invVP[3] * nx + invVP[7] * ny + invVP[11] * z + invVP[15];
+            if (!w) return null;
+            out[0] = x / w;
+            out[1] = y / w;
+            out[2] = (invVP[2] * nx + invVP[6] * ny + invVP[10] * z + invVP[14]) / w;
+            return out;
+        }
+        var p0 = [0, 0, 0];
+        var p1 = [0, 0, 0];
+        if (!unproject(-1, p0) || !unproject(1, p1)) return;
+
+        var dy = p1[1] - p0[1];
+        if (Math.abs(dy) < 1e-5) return;
+        var t = -p0[1] / dy;
+        if (t < 0 || t > 1.4) return;
+        var hx = p0[0] + (p1[0] - p0[0]) * t;
+        var hz = p0[2] + (p1[2] - p0[2]) * t;
+        if (Math.abs(hx) > HALF || Math.abs(hz) > HALF) return;
+
+        spawnRipple(hx, hz, 1.0, false, 0, 0.22, -hx / (Math.abs(hx) + Math.abs(hz) + 1e-4), -hz / (Math.abs(hx) + Math.abs(hz) + 1e-4), 0.35);
+        pokeIdle();
+    }
+
+    // ── 事件 ─────────────────────────────────────────────────
+    if (ui.close) ui.close.addEventListener('click', close);
+    if (ui.prev) ui.prev.addEventListener('click', function () { mgr.playPrev(); pokeIdle(); });
+    if (ui.next) ui.next.addEventListener('click', function () { mgr.playNext(); pokeIdle(); });
+    if (ui.toggle) ui.toggle.addEventListener('click', function () { mgr.togglePlay(); pokeIdle(); });
+    if (ui.like) ui.like.addEventListener('click', function () { toggleLike(); pokeIdle(); });
+
+    el.addEventListener('pointerdown', function (ev) {
+        pokeIdle();
+        if (!ui.gl || ev.target !== ui.gl) return;
+        spawnAtPointer(ev.clientX, ev.clientY);
+    });
+
+    // ── 玻璃高光跟随指针 ─────────────────────────────────────
+    // 光源在哪，凸面上的高光就在哪。这是「玻璃」与「半透明色块」之间
+    // 最后一道分界：静态渐变谁都能画，跟着指针走的高光才让人相信它是一块
+    // 有曲率的实体。
+    // 必须节流到 rAF：指针事件频率可达 200Hz，每次都写 CSS 变量会让样式
+    // 系统长期处于失效状态，而那正好与 3D 渲染抢同一帧的预算。
+    var specRaf = 0;
+    var specX = 0;
+    var specY = 0;
+
+    function queueSpecular(ev) {
+        specX = ev.clientX;
+        specY = ev.clientY;
+        if (specRaf) return;
+        specRaf = requestAnimationFrame(function () {
+            specRaf = 0;
+            if (!ui.card) return;
+            var r = ui.card.getBoundingClientRect();
+            if (!r.width || !r.height) return;
+            // 允许超出 0–100%：光源在卡片之外时，高光应该被推到边上，
+            // 而不是原地消失
+            var lx = ((specX - r.left) / r.width) * 100;
+            var ly = ((specY - r.top) / r.height) * 100;
+            lx = Math.max(-40, Math.min(140, lx));
+            ly = Math.max(-70, Math.min(170, ly));
+            ui.card.style.setProperty('--mvz-lx', lx.toFixed(1) + '%');
+            ui.card.style.setProperty('--mvz-ly', ly.toFixed(1) + '%');
+        });
+    }
+
+    el.addEventListener('pointermove', function (ev) {
+        if (!isOpen) return;
+        queueSpecular(ev);
+        // 触摸不参与视差：手指在屏幕上滑动时 pointermove 只在按下期间派发，
+        // 抬起之后镜头会永久停在最后一帧的倾角上——那不是「跟随」，
+        // 是一块卡住的偏斜。桌面指针有 leave 兜底，触摸没有。
+        if (reduced || ev.pointerType === 'touch') return;
+        cam.px = (ev.clientX / window.innerWidth - 0.5) * 2;
+        cam.py = (ev.clientY / window.innerHeight - 0.5) * 2;
+        pokeIdle();
+    });
+
+    // 指针离开面板：视差回中，而不是停在边缘角度上。
+    // 卡片高光留在原地——它表示「光源刚才在哪」，回中的话就成了无意义的动画。
+    el.addEventListener('pointerleave', function (ev) {
+        if (!isOpen || ev.pointerType === 'touch') return;
+        cam.px = 0;
+        cam.py = 0;
+    });
+
+    document.addEventListener('keydown', function (ev) {
+        if (!isOpen) return;
+        if (ev.key === 'Escape') { ev.preventDefault(); close(); return; }
+
+        // 把 Tab 锁在对话框内，避免焦点跑到被遮住的页面上
+        if (ev.key === 'Tab') {
+            var nodes = el.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
+            var list = [];
+            for (var i = 0; i < nodes.length; i++) {
+                if (nodes[i].offsetParent !== null && !nodes[i].disabled) list.push(nodes[i]);
+            }
+            if (!list.length) return;
+            var first = list[0];
+            var last = list[list.length - 1];
+            if (ev.shiftKey && document.activeElement === first) {
+                ev.preventDefault();
+                last.focus();
+            } else if (!ev.shiftKey && document.activeElement === last) {
+                ev.preventDefault();
+                first.focus();
+            }
+            return;
+        }
+        var tag = (ev.target && ev.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (ev.code === 'Space') {
+            ev.preventDefault();
+            mgr.togglePlay();
+            pokeIdle();
+        } else if (ev.key === 'ArrowRight') {
+            ev.preventDefault();
+            var st = mgr.getState();
+            if (st.duration) mgr.seekToTime(st.currentTime + 5);
+            pokeIdle();
+        } else if (ev.key === 'ArrowLeft') {
+            ev.preventDefault();
+            var st2 = mgr.getState();
+            if (st2.duration) mgr.seekToTime(st2.currentTime - 5);
+            pokeIdle();
+        }
+    });
+
+    // 进度拖动
+    (function bindSeek() {
+        var node = ui.progress;
+        if (!node) return;
+        var dragging = false;
+        function pct(ev) {
+            var r = node.getBoundingClientRect();
+            if (!r.width) return 0;
+            return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+        }
+        node.addEventListener('pointerdown', function (ev) {
+            if (ev.button !== 0) return;
+            dragging = true;
+            try { node.setPointerCapture(ev.pointerId); } catch (err) {}
+            mgr.seek(pct(ev));
+            pokeIdle();
+        });
+        node.addEventListener('pointermove', function (ev) {
+            if (!dragging) return;
+            var p = pct(ev);
+            if (ui.bar) ui.bar.style.width = (p * 100).toFixed(3) + '%';
+            if (ui.head) ui.head.style.left = (p * 100).toFixed(3) + '%';
+            var dur = mgr.getState().duration || 0;
+            if (ui.cur && dur) ui.cur.textContent = fmt(p * dur);
+        });
+        node.addEventListener('pointerup', function (ev) {
+            if (!dragging) return;
+            dragging = false;
+            mgr.seek(pct(ev));
+        });
+        node.addEventListener('pointercancel', function () { dragging = false; });
+        node.addEventListener('keydown', function (ev) {
+            if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+            var st = mgr.getState();
+            if (!st.duration) return;
+            ev.preventDefault();
+            mgr.seekToTime(st.currentTime + (ev.key === 'ArrowRight' ? 5 : -5));
+        });
+    })();
+
+    function fmt(sec) {
+        if (!sec || isNaN(sec)) return '0:00';
+        var m = Math.floor(sec / 60);
+        var s = Math.floor(sec % 60);
+        return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    // ── 外部事件 ─────────────────────────────────────────────
+    window.addEventListener('fm:open-visualizer', open);
+    window.addEventListener('fm:track', function () { if (isOpen) syncMeta(); });
+    window.addEventListener('fm:play-state', function () { if (isOpen && !rafId) start(); });
+
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) stop();
+        else if (isOpen) start();
+    });
+
+    // 上下文丢失/恢复。恢复时如果面板已经关掉就不再重建——否则会在用户
+    // 看不见的地方空跑一整套管线，还占着显存。
+    if (ui.gl) {
+        ui.gl.addEventListener('webglcontextlost', function (ev) {
+            ev.preventDefault();
+            stop();
+            resetGLHandles();
+        });
+        ui.gl.addEventListener('webglcontextrestored', function () {
+            if (!isOpen) return;
+            if (initGL()) {
+                el.classList.add('has-gl');
+                resize();
+                start();
+            }
+        });
+    }
+
+    var resizeRaf = 0;
+    window.addEventListener('resize', function () {
+        if (!isOpen) return;
+        if (resizeRaf) return;
+        resizeRaf = requestAnimationFrame(function () {
+            resizeRaf = 0;
+            resize();
+        });
+    });
+
+    // 卡片配色是固定值，主题切换不需要重算——这里只保留 resize 的收尾。
+
+    setMotion();
+    window.__mvzProbe = probe;
+    window.__fireflyVisualizer = {
+        el: el,
+        open: open,
+        close: close,
+        refresh: refresh,
+        isOpen: function () { return isOpen; }
+    };
+
+    // ?mvz=1：等播放列表就绪后自动进入全屏层。最多等 10 秒，
+    // 列表为空也要开——地形本身不依赖曲目数据。
+    if (DEBUG_OPEN) {
+        var bootTries = 0;
+        var bootTimer = setInterval(function () {
+            bootTries++;
+            if (mgr.getState().track || bootTries > 40) {
+                clearInterval(bootTimer);
+                open();
+            }
+        }, 250);
+    }
+})();
+</script>

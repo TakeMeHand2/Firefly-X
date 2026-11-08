@@ -47,3 +47,21 @@ package/
 .codex*
 .claude
 .mimocode
+
+# 工具链运行态（agent 会话状态、插件指针、审查记录），不属于源码
+.mimosa/
+.v2c/
+.yanagent/
+
+# 构建产物临时备份（构建验证时产生）
+dist.prev/
+
+# 本地测量/调试产物（mvz-lab 逐帧截图与数据，可由 capture.mjs 重新生成）
+tools/mvz-lab/out/
+
+# 本地临时目录（无头浏览器 profile、截图等）
+.workbuddy/tmp/
+
+# agent 工作日誌（逐日记录，属于个人上下文，不进源码树）
+# 只忽略 memory/，其余 .workbuddy/ 内容（如项目级 skills）仍可纳入版本控制
+.workbuddy/memory/

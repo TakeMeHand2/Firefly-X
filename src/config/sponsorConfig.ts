@@ -8,19 +8,21 @@ export const sponsorConfig: SponsorConfig = {
 	description: "",
 
 	// 打赏用途说明
-	usage:
-		"您的打赏将用于服务器维护、内容创作和功能开发，帮助我持续提供优质内容。",
+	usage: "如果这里的内容对你有帮助，欢迎请我喝杯咖啡。",
 
 	// 是否显示打赏者列表
-	showSponsorsList: true,
+	showSponsorsList: false,
 
 	// 是否显示评论区，需要先在commentConfig.ts启用评论系统
-	showComment: true,
+	showComment: false,
 
 	// 是否在文章详情页底部显示打赏按钮
-	showButtonInPost: true,
+	showButtonInPost: false,
 
 	// 打赏方式列表
+	// TODO 全部默认关闭：仓库内置的收款码属于模板作者。
+	// 换成你自己的收款码（放入 public/assets/images/sponsor/）后再把对应项改为 enabled: true，
+	// 否则访客会付款给模板作者。
 	methods: [
 		{
 			name: "支付宝",
@@ -29,7 +31,7 @@ export const sponsorConfig: SponsorConfig = {
 			qrCode: "/assets/images/sponsor/alipay.png",
 			link: "",
 			description: "使用 支付宝 扫码打赏",
-			enabled: true,
+			enabled: false,
 		},
 		{
 			name: "微信",
@@ -37,43 +39,26 @@ export const sponsorConfig: SponsorConfig = {
 			qrCode: "/assets/images/sponsor/wechat.png",
 			link: "",
 			description: "使用 微信 扫码打赏",
-			enabled: true,
+			enabled: false,
 		},
 		{
 			name: "ko-fi",
 			icon: "simple-icons:kofi",
 			qrCode: "",
-			link: "https://ko-fi.com/cuteleaf",
-			description: "Buy a Coffee for Firefly",
-			enabled: true,
+			link: "",
+			description: "Buy me a Coffee",
+			enabled: false,
 		},
 		{
 			name: "爱发电",
 			icon: "simple-icons:afdian",
 			qrCode: "",
-			link: "https://ifdian.net/a/cuteleaf",
+			link: "",
 			description: "通过 爱发电 进行打赏",
-			enabled: true,
+			enabled: false,
 		},
 	],
 
 	// 打赏者列表（可选）
-	sponsors: [
-		// 示例：已实名打赏者
-		{
-			name: "夏叶",
-			avatar:
-				"https://weavatar.com/avatar/d252655d40d6874417a720bad0a6c5f77f8f6a1fd2f882f8f338402dc37e4190?s=640",
-			amount: "¥50",
-			date: "2025-10-01",
-		},
-
-		// 示例：匿名打赏者
-		{
-			name: "匿名用户",
-			// avatar: "",
-			amount: "¥20",
-			date: "2025-10-01",
-		},
-	],
+	sponsors: [],
 };

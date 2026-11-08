@@ -49,12 +49,10 @@ const config = {
         commentEl.innerHTML = "";
 
         const dynamicConfig = createTwikooConfig();
-        console.log("[Twikoo] Init config:", dynamicConfig);
 
         twikoo
           .init(dynamicConfig)
           .then(() => {
-            console.log("[Twikoo] Init complete");
           })
           .catch((error) => {
             console.error("[Twikoo] Init failed:", error);
@@ -88,7 +86,6 @@ const config = {
   document.addEventListener("firefly:page:loaded", function () {
     const commentEl = document.getElementById("tcomment");
     if (commentEl) {
-      console.log("[Twikoo] Re-initializing via custom event");
       initTwikoo();
     }
   });

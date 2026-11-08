@@ -9,10 +9,8 @@ export const zh_TW: Translation = {
 	[Key.searchNoResults]: "找不到相關結果。",
 	[Key.searchTypeSomething]: "請輸入搜尋關鍵字。",
 	[Key.searchLoading]: "搜尋中...",
-	[Key.searchSummary]: "摘要",
 	[Key.searchContent]: "內容",
 	[Key.searchViewMore]: "查看更多結果 ({count} 個更多)",
-	[Key.other]: "其他",
 
 	// 導覽列選單分組
 	[Key.navArticles]: "文章",
@@ -27,7 +25,6 @@ export const zh_TW: Translation = {
 	[Key.allCategories]: "全部分類",
 	[Key.allTags]: "全部標籤",
 	[Key.allSeries]: "全部系列",
-	[Key.recentPosts]: "最新文章",
 	[Key.postList]: "文章列表",
 	[Key.tableOfContents]: "文章目錄",
 	[Key.tocEmpty]: "目前頁面沒有目錄",
@@ -41,10 +38,7 @@ export const zh_TW: Translation = {
 	[Key.dynamicNoResults]: "沒有找到符合的動態",
 	[Key.dynamicLoading]: "正在載入動態",
 	[Key.dynamicAllYears]: "全部年份",
-	[Key.dynamicLoadMore]: "載入更多",
-	[Key.dynamicBackToList]: "返回動態列表",
 	[Key.dynamicProfile]: "查看 {name} 的資料",
-	[Key.dynamicPermalink]: "此動態的固定連結",
 	[Key.dynamicCollapseGallery]: "收起",
 	[Key.dynamicViewOriginal]: "查看大圖",
 	[Key.dynamicPreviousImage]: "上一張圖片",
@@ -63,12 +57,15 @@ export const zh_TW: Translation = {
 	[Key.musicFailedLyrics]: "歌詞加載失敗",
 	[Key.musicNoSongs]: "暫無歌曲",
 	[Key.musicError]: "播放器錯誤",
+	[Key.musicVisualizer]: "音訊視覺化",
 	[Key.musicPlay]: "播放",
 	[Key.musicPause]: "暫停",
 	[Key.musicProgress]: "播放進度",
 	[Key.musicCover]: "封面",
 	[Key.musicNoCover]: "暫無封面",
-	[Key.musicAudioPlayer]: "音頻播放器",
+	[Key.musicClose]: "關閉播放器",
+	[Key.musicLike]: "收藏這首",
+	[Key.musicUnlike]: "取消收藏",
 
 	// 公告欄
 	[Key.announcement]: "公告",
@@ -102,7 +99,6 @@ export const zh_TW: Translation = {
 	[Key.projectStatusArchived]: "已封存",
 	[Key.guestbook]: "留言",
 	[Key.guestbookDescription]: "歡迎在這裡留下你的足跡，分享你的想法和建議",
-	[Key.untitled]: "無標題",
 	[Key.uncategorized]: "未分類",
 	[Key.noTags]: "無標籤",
 
@@ -132,7 +128,6 @@ export const zh_TW: Translation = {
 	[Key.bangumi]: "番組計劃",
 
 	// 番組計劃
-	[Key.bangumiTitle]: "我的番組計劃",
 	[Key.bangumiSubtitle]: "記錄我的二次元之旅",
 
 	// 番組計劃篩選和狀態文本
@@ -173,14 +168,6 @@ export const zh_TW: Translation = {
 	[Key.bangumiFetchError]: "Bangumi 資料拉取失敗",
 	[Key.bangumiFetchErrorDesc]:
 		"構建時從 Bangumi API 獲取資料失敗，該頁面內容暫不可用。",
-	[Key.bangumiUsername]: "用戶名",
-	[Key.bangumiApi]: "API",
-	[Key.bangumiConfigTip]: "提示：請在頁面配置中設置正確的Bangumi用戶名",
-	[Key.bangumiPrevPage]: "上一頁",
-	[Key.bangumiNextPage]: "下一頁",
-	[Key.bangumiCurrentPage]: "第",
-	[Key.bangumiTotalPages]: "頁，共",
-	[Key.bangumiPage]: "頁",
 
 	// 番組分類
 	[Key.bangumiCategoryBook]: "書籍",
@@ -191,8 +178,6 @@ export const zh_TW: Translation = {
 
 	// 番組數據更新
 	[Key.bangumiLastUpdated]: "資料更新日期",
-	[Key.bangumiUpdatedAt]: "構建時間",
-	[Key.bangumiDataStatic]: "靜態數據",
 
 	// VNDB
 	[Key.vndb]: "VNDB",
@@ -235,27 +220,19 @@ export const zh_TW: Translation = {
 
 	// 追番 - 公共組件
 	[Key.animeTotal]: "總追番",
-	[Key.animeAverageRating]: "平均評分",
 	[Key.animeSearch]: "搜尋番劇...",
-	[Key.animeAllTypes]: "全部",
-	[Key.animeTV]: "TV 動畫",
-	[Key.animeMovie]: "電影",
 	[Key.animeRatingDesc]: "評分最高",
 	[Key.animeRatingAsc]: "評分最低",
 	[Key.animeDateDesc]: "最新發布",
 	[Key.animeDateAsc]: "最早發布",
 	[Key.animeNoResults]: "沒有找到匹配的番劇",
 	[Key.animeLastUpdated]: "資料更新日期",
-	[Key.animeEpStatus]: "進度",
 	[Key.animeViewDetails]: "查看詳情",
 	[Key.animeBilibiliAvg]: "Bilibili 均分",
 	[Key.animeNoOverview]: "暫無簡介",
 	[Key.animeClose]: "關閉",
 	[Key.animeSynopsis]: "劇情簡介",
 	[Key.animeWatchNow]: "立即觀看",
-	[Key.animeAllWithCount]: "全部 ({count})",
-	[Key.animeTVWithCount]: "TV ({count})",
-	[Key.animeMovieWithCount]: "電影 ({count})",
 	[Key.animeTypeAnime]: "番劇",
 	[Key.animeTypeMovie]: "電影",
 	[Key.animeTypeDocumentary]: "紀錄片",
@@ -294,14 +271,9 @@ export const zh_TW: Translation = {
 	[Key.malSeasonFall]: "秋季",
 
 	// 分頁
-	[Key.paginationFirst]: "首頁",
 	[Key.paginationPrev]: "上一頁",
 	[Key.paginationNext]: "下一頁",
-	[Key.paginationLast]: "末頁",
 	[Key.paginationPage]: "第",
-	[Key.paginationOf]: "頁，共",
-	[Key.paginationTotal]: "頁，總計",
-	[Key.paginationRecords]: "條記錄",
 	[Key.paginationJump]: "跳轉到指定頁",
 
 	// 404頁面
@@ -342,16 +314,10 @@ export const zh_TW: Translation = {
 	[Key.lastModifiedOutdated]: "部分內容可能已過時",
 	[Key.lastModifiedDaysAgo]: "距今已過 {days} 天",
 	[Key.year]: "年",
-	[Key.month]: "月",
-	[Key.day]: "日",
-	[Key.hour]: "時",
-	[Key.minute]: "分",
-	[Key.second]: "秒",
 
 	// 訪問量統計
 	[Key.pageViews]: "瀏覽量",
 	[Key.pageViewsLoading]: "載入中...",
-	[Key.pageViewsError]: "統計不可用",
 
 	// 置頂
 	[Key.pinned]: "置頂",
@@ -417,13 +383,8 @@ export const zh_TW: Translation = {
 	[Key.sponsorTitle]: "打賞支持",
 	[Key.sponsorDescription]:
 		"如果我的內容對你有幫助，歡迎通過以下方式打賞我，你的支持是我持續創作的動力！",
-	[Key.sponsorMethods]: "打賞方式",
 	[Key.sponsorList]: "打賞列表",
 	[Key.sponsorEmpty]: "暫無打賞記錄",
-	[Key.sponsorAmount]: "金額",
-	[Key.sponsorDate]: "日期",
-	[Key.sponsorMessage]: "留言",
-	[Key.sponsorAnonymous]: "匿名",
 	[Key.scanToSponsor]: "掃碼打賞",
 	[Key.sponsorGoTo]: "前往打賞",
 	[Key.sponsorButton]: "支持與分享",
@@ -436,7 +397,6 @@ export const zh_TW: Translation = {
 	// 站點統計
 	[Key.siteStats]: "站點統計",
 	[Key.siteStatsPostCount]: "文章",
-	[Key.siteStatsDynamicCount]: "動態",
 	[Key.siteStatsCategoryCount]: "分類",
 	[Key.siteStatsTagCount]: "標籤",
 	[Key.siteStatsTotalWords]: "總字數",
@@ -492,16 +452,11 @@ export const zh_TW: Translation = {
 	[Key.scanToRead]: "掃碼閱讀文章",
 
 	// 代碼區塊折疊配置
-	[Key.codeCollapsibleShowMore]: "展開",
-	[Key.codeCollapsibleShowLess]: "收起",
-	[Key.codeCollapsibleExpanded]: "代碼區塊已展開",
-	[Key.codeCollapsibleCollapsed]: "代碼區塊已折疊",
 
 	// 相簿頁面
 	[Key.gallery]: "相簿",
 	[Key.galleryDescription]: "記錄生活中的美好瞬間",
 	[Key.galleryPhotos]: "張照片",
-	[Key.galleryAlbums]: "本相簿",
 	[Key.galleryNoAlbums]: "暫無相簿",
 	[Key.galleryBackToAlbums]: "返回相簿列表",
 	[Key.galleryEnterAlbum]: "進入相簿",
@@ -529,4 +484,20 @@ export const zh_TW: Translation = {
 	[Key.exitImmersiveReading]: "退出沉浸閱讀",
 	[Key.tocExpand]: "展開目錄",
 	[Key.tocCollapse]: "摺疊目錄",
+
+	// 訪客問候
+	[Key.greetingDawn]: "天快亮了",
+	[Key.greetingMorning]: "早安",
+	[Key.greetingNoon]: "午安",
+	[Key.greetingAfternoon]: "下午好",
+	[Key.greetingEvening]: "傍晚好",
+	[Key.greetingNight]: "晚安",
+	[Key.greetingLateNight]: "夜深了",
+	[Key.greetingMsg1]: "歡迎來坐坐，隨便逛逛。",
+	[Key.greetingMsg2]: "希望這裡有你感興趣的東西。",
+	[Key.greetingMsg3]: "喝杯水，慢慢逛。",
+	[Key.greetingMsg4]: "很久不見，最近還好嗎？",
+	[Key.greetingFirstVisit]: "初次見面，請多關照",
+	[Key.greetingVisitCount]: "第 {count} 次來訪",
+	[Key.greetingClose]: "關閉問候",
 };

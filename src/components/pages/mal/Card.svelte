@@ -1,6 +1,4 @@
 <script lang="ts">
-import I18nKey from "@/i18n/i18nKey";
-import { i18n } from "@/i18n/translation";
 import type { MalListItem } from "@/types/mal";
 import type { NsfwMode } from "@/types/nsfw";
 import { getFailedCovers, markCoverFailed } from "@/utils/failed-covers";

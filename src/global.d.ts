@@ -91,6 +91,8 @@ declare global {
 		__floatingTOCAutoCloseInit?: boolean;
 		/** 文章列表页布局监听器守卫,确保只注册一次 */
 		__postPageInit?: boolean;
+		/** 访客问候卡片初始化守卫,确保只初始化一次(Swup 切页重跑脚本时复用) */
+		__fireflyGreetingInit?: boolean;
 	}
 
 	interface MediaQueryList {

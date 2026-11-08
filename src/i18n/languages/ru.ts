@@ -9,10 +9,8 @@ export const ru: Translation = {
 	[Key.searchNoResults]: "Результаты не найдены.",
 	[Key.searchTypeSomething]: "Введите ключевое слово для поиска...",
 	[Key.searchLoading]: "Поиск...",
-	[Key.searchSummary]: "Резюме",
 	[Key.searchContent]: "Содержание",
 	[Key.searchViewMore]: "Показать еще ({count} шт)",
-	[Key.other]: "Прочее",
 
 	// Группы меню навигации
 	[Key.navArticles]: "Статьи",
@@ -27,7 +25,6 @@ export const ru: Translation = {
 	[Key.allCategories]: "Все категории",
 	[Key.allTags]: "Все теги",
 	[Key.allSeries]: "Все серии",
-	[Key.recentPosts]: "Последние посты",
 	[Key.postList]: "Список постов",
 	[Key.tableOfContents]: "Содержание",
 	[Key.tocEmpty]: "На этой странице нет оглавления",
@@ -41,10 +38,7 @@ export const ru: Translation = {
 	[Key.dynamicNoResults]: "Подходящие публикации не найдены",
 	[Key.dynamicLoading]: "Загрузка публикаций",
 	[Key.dynamicAllYears]: "Все годы",
-	[Key.dynamicLoadMore]: "Загрузить ещё",
-	[Key.dynamicBackToList]: "Назад к публикациям",
 	[Key.dynamicProfile]: "Открыть профиль {name}",
-	[Key.dynamicPermalink]: "Постоянная ссылка на публикацию",
 	[Key.dynamicCollapseGallery]: "Свернуть",
 	[Key.dynamicViewOriginal]: "Открыть оригинал",
 	[Key.dynamicPreviousImage]: "Предыдущее изображение",
@@ -63,12 +57,15 @@ export const ru: Translation = {
 	[Key.musicFailedLyrics]: "Ошибка загрузки текста песни",
 	[Key.musicNoSongs]: "Нет песен",
 	[Key.musicError]: "Ошибка плеера",
+	[Key.musicVisualizer]: "Визуализация",
 	[Key.musicPlay]: "Воспроизвести",
 	[Key.musicPause]: "Пауза",
 	[Key.musicProgress]: "Прогресс воспроизведения",
 	[Key.musicCover]: "Обложка",
 	[Key.musicNoCover]: "Нет обложки",
-	[Key.musicAudioPlayer]: "Аудиоплеер",
+	[Key.musicClose]: "Закрыть плеер",
+	[Key.musicLike]: "Добавить в избранное",
+	[Key.musicUnlike]: "Удалить из избранного",
 
 	// Объявление
 	[Key.announcement]: "Объявление",
@@ -105,7 +102,6 @@ export const ru: Translation = {
 	[Key.guestbook]: "Гостевая книга",
 	[Key.guestbookDescription]:
 		"Добро пожаловать, оставьте свой след здесь, поделитесь своими мыслями и предложениями",
-	[Key.untitled]: "Без названия",
 	[Key.uncategorized]: "Без категории",
 	[Key.noTags]: "Нет тегов",
 
@@ -135,7 +131,6 @@ export const ru: Translation = {
 	[Key.bangumi]: "Bangumi",
 
 	// Фильтр и статус Бангуми текст
-	[Key.bangumiTitle]: "Мой Bangumi",
 	[Key.bangumiSubtitle]: "Запись моего аниме путешествия",
 	[Key.bangumiFilterAll]: "Все",
 	[Key.bangumiFilterWatched]: "Просмотрено",
@@ -175,15 +170,6 @@ export const ru: Translation = {
 	[Key.bangumiFetchError]: "Ошибка загрузки данных Bangumi",
 	[Key.bangumiFetchErrorDesc]:
 		"Не удалось загрузить данные из Bangumi API при сборке. Эта страница временно недоступна.",
-	[Key.bangumiUsername]: "Имя пользователя",
-	[Key.bangumiApi]: "API",
-	[Key.bangumiConfigTip]:
-		"Подсказка: установите правильное имя пользователя Bangumi в конфигурации страницы",
-	[Key.bangumiPrevPage]: "Предыдущая",
-	[Key.bangumiNextPage]: "Следующая",
-	[Key.bangumiCurrentPage]: "Страница",
-	[Key.bangumiTotalPages]: "из",
-	[Key.bangumiPage]: "страница",
 
 	// Категории Бангуми
 	[Key.bangumiCategoryBook]: "Книга",
@@ -194,8 +180,6 @@ export const ru: Translation = {
 
 	// Обновление данных Бангуми
 	[Key.bangumiLastUpdated]: "Дата обновления данных",
-	[Key.bangumiUpdatedAt]: "Время сборки",
-	[Key.bangumiDataStatic]: "Статические данные",
 
 	// VNDB
 	[Key.vndb]: "VNDB",
@@ -238,27 +222,19 @@ export const ru: Translation = {
 
 	// Отслеживание аниме - общие компоненты
 	[Key.animeTotal]: "Всего",
-	[Key.animeAverageRating]: "Средний рейтинг",
 	[Key.animeSearch]: "Поиск аниме...",
-	[Key.animeAllTypes]: "Все",
-	[Key.animeTV]: "TV Аниме",
-	[Key.animeMovie]: "Фильм",
 	[Key.animeRatingDesc]: "По рейтингу ↓",
 	[Key.animeRatingAsc]: "По рейтингу ↑",
 	[Key.animeDateDesc]: "Сначала новые",
 	[Key.animeDateAsc]: "Сначала старые",
 	[Key.animeNoResults]: "Аниме не найдено",
 	[Key.animeLastUpdated]: "Дата обновления данных",
-	[Key.animeEpStatus]: "Прогресс",
 	[Key.animeViewDetails]: "Подробнее",
 	[Key.animeBilibiliAvg]: "Bilibili ср.",
 	[Key.animeNoOverview]: "Нет описания",
 	[Key.animeClose]: "Закрыть",
 	[Key.animeSynopsis]: "Описание",
 	[Key.animeWatchNow]: "Смотреть",
-	[Key.animeAllWithCount]: "Все ({count})",
-	[Key.animeTVWithCount]: "ТВ ({count})",
-	[Key.animeMovieWithCount]: "Фильм ({count})",
 	[Key.animeTypeAnime]: "Аниме",
 	[Key.animeTypeMovie]: "Фильм",
 	[Key.animeTypeDocumentary]: "Документальный",
@@ -297,14 +273,9 @@ export const ru: Translation = {
 	[Key.malSeasonFall]: "Осень",
 
 	// Пагинация
-	[Key.paginationFirst]: "Первая",
 	[Key.paginationPrev]: "Предыдущая",
 	[Key.paginationNext]: "Следующая",
-	[Key.paginationLast]: "Последняя",
 	[Key.paginationPage]: "Страница",
-	[Key.paginationOf]: "из",
-	[Key.paginationTotal]: ", всего",
-	[Key.paginationRecords]: " записей",
 	[Key.paginationJump]: "Перейти к странице",
 
 	// 404 Страница
@@ -351,16 +322,10 @@ export const ru: Translation = {
 	[Key.lastModifiedOutdated]: "Некоторый контент может быть устаревшим",
 	[Key.lastModifiedDaysAgo]: "{days} дней назад",
 	[Key.year]: "год",
-	[Key.month]: "месяц",
-	[Key.day]: "день",
-	[Key.hour]: "час",
-	[Key.minute]: "минута",
-	[Key.second]: "секунда",
 
 	// Статистика просмотров
 	[Key.pageViews]: "Просмотры",
 	[Key.pageViewsLoading]: "Загрузка...",
-	[Key.pageViewsError]: "Статистика недоступна",
 
 	// Закреплено
 	[Key.pinned]: "Закреплено",
@@ -426,13 +391,8 @@ export const ru: Translation = {
 	[Key.sponsorTitle]: "Поддержать меня",
 	[Key.sponsorDescription]:
 		"Если мой контент был полезен для вас, добро пожаловать поддержать меня следующими способами. Ваша поддержка - это движущая сила моего постоянного творчества!",
-	[Key.sponsorMethods]: "Способы оплаты",
 	[Key.sponsorList]: "Спонсоры",
 	[Key.sponsorEmpty]: "Пока нет спонсоров",
-	[Key.sponsorAmount]: "Сумма",
-	[Key.sponsorDate]: "Дата",
-	[Key.sponsorMessage]: "Сообщение",
-	[Key.sponsorAnonymous]: "Анонимно",
 	[Key.scanToSponsor]: "Сканировать для поддержки",
 	[Key.sponsorGoTo]: "Перейти к спонсору",
 	[Key.sponsorButton]: "Поддержка и Поделиться",
@@ -446,7 +406,6 @@ export const ru: Translation = {
 	// Статистика сайта
 	[Key.siteStats]: "Статистика сайта",
 	[Key.siteStatsPostCount]: "Статьи",
-	[Key.siteStatsDynamicCount]: "Публикации",
 	[Key.siteStatsCategoryCount]: "Категории",
 	[Key.siteStatsTagCount]: "Теги",
 	[Key.siteStatsTotalWords]: "Всего слов",
@@ -502,16 +461,11 @@ export const ru: Translation = {
 	[Key.scanToRead]: "Сканируйте, чтобы прочитать",
 
 	// Конфигурация блоков коллапсируемого кода
-	[Key.codeCollapsibleShowMore]: "Развернуть",
-	[Key.codeCollapsibleShowLess]: "Свернуть",
-	[Key.codeCollapsibleExpanded]: "Блок кода развернут",
-	[Key.codeCollapsibleCollapsed]: "Блок кода свернут",
 
 	// Страница галереи
 	[Key.gallery]: "Галерея",
 	[Key.galleryDescription]: "Запечатлеть прекрасные моменты жизни",
 	[Key.galleryPhotos]: "фото",
-	[Key.galleryAlbums]: "альбомов",
 	[Key.galleryNoAlbums]: "Пока нет альбомов",
 	[Key.galleryBackToAlbums]: "Вернуться к альбомам",
 	[Key.galleryEnterAlbum]: "Открыть альбом",
@@ -541,4 +495,20 @@ export const ru: Translation = {
 	[Key.exitImmersiveReading]: "Выйти из режима чтения",
 	[Key.tocExpand]: "Развернуть оглавление",
 	[Key.tocCollapse]: "Свернуть оглавление",
+
+	// Приветствие посетителя
+	[Key.greetingDawn]: "Скоро рассвет",
+	[Key.greetingMorning]: "Доброе утро",
+	[Key.greetingNoon]: "Добрый день",
+	[Key.greetingAfternoon]: "Добрый день",
+	[Key.greetingEvening]: "Добрый вечер",
+	[Key.greetingNight]: "Добрый вечер",
+	[Key.greetingLateNight]: "Не спится?",
+	[Key.greetingMsg1]: "Располагайтесь, посмотрите вокруг.",
+	[Key.greetingMsg2]: "Надеюсь, здесь найдётся что-то для вас.",
+	[Key.greetingMsg3]: "Возьмите чашку чая и не спешите.",
+	[Key.greetingMsg4]: "Давно не виделись. Как вы?",
+	[Key.greetingFirstVisit]: "Впервые здесь — добро пожаловать",
+	[Key.greetingVisitCount]: "Посещение №{count}",
+	[Key.greetingClose]: "Закрыть приветствие",
 };

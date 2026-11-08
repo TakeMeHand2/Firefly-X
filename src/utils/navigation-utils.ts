@@ -80,64 +80,6 @@ function fallbackNavigation(
 }
 
 /**
- * 检查 Swup 是否已准备就绪
- */
-export function isSwupReady(): boolean {
-	return typeof window !== "undefined" && !!window.swup;
-}
-
-/**
- * 等待 Swup 准备就绪
- * @param timeout 超时时间（毫秒）
- */
-export function waitForSwup(timeout = 5000): Promise<boolean> {
-	return new Promise((resolve) => {
-		if (isSwupReady()) {
-			resolve(true);
-			return;
-		}
-
-		let timeoutId: NodeJS.Timeout;
-
-		const checkSwup = () => {
-			if (isSwupReady()) {
-				clearTimeout(timeoutId);
-				document.removeEventListener("swup:enable", checkSwup);
-				resolve(true);
-			}
-		};
-
-		// 监听 Swup 启用事件
-		document.addEventListener("swup:enable", checkSwup);
-
-		// 设置超时
-		timeoutId = setTimeout(() => {
-			document.removeEventListener("swup:enable", checkSwup);
-			resolve(false);
-		}, timeout);
-	});
-}
-
-/**
- * 预加载页面
- * @param url 要预加载的页面URL
- */
-export function preloadPage(url: string): void {
-	if (!url || typeof url !== "string") {
-		return;
-	}
-
-	// 如果 Swup 可用，使用其预加载功能
-	if (isSwupReady() && window.swup.preload) {
-		try {
-			window.swup.preload(url);
-		} catch (error) {
-			console.warn("Failed to preload page:", error);
-		}
-	}
-}
-
-/**
  * 获取当前页面路径
  */
 export function getCurrentPath(): string {

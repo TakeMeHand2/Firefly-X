@@ -9,10 +9,8 @@ export const ko: Translation = {
 	[Key.searchNoResults]: "검색 결과가 없습니다.",
 	[Key.searchTypeSomething]: "검색어를 입력하세요...",
 	[Key.searchLoading]: "검색 중...",
-	[Key.searchSummary]: "요약",
 	[Key.searchContent]: "내용",
 	[Key.searchViewMore]: "더 많은 결과 보기 ({count}개 더)",
-	[Key.other]: "기타",
 
 	// 네비게이션 메뉴 그룹
 	[Key.navArticles]: "글",
@@ -27,7 +25,6 @@ export const ko: Translation = {
 	[Key.allCategories]: "모든 카테고리",
 	[Key.allTags]: "모든 태그",
 	[Key.allSeries]: "모든 시리즈",
-	[Key.recentPosts]: "최근 게시글",
 	[Key.postList]: "게시글 목록",
 	[Key.tableOfContents]: "목차",
 	[Key.tocEmpty]: "이 페이지에는 목차가 없습니다",
@@ -41,10 +38,7 @@ export const ko: Translation = {
 	[Key.dynamicNoResults]: "일치하는 일상이 없습니다",
 	[Key.dynamicLoading]: "일상을 불러오는 중",
 	[Key.dynamicAllYears]: "모든 연도",
-	[Key.dynamicLoadMore]: "더 보기",
-	[Key.dynamicBackToList]: "일상 목록으로",
 	[Key.dynamicProfile]: "{name}님의 프로필 보기",
-	[Key.dynamicPermalink]: "이 일상의 고유 링크",
 	[Key.dynamicCollapseGallery]: "접기",
 	[Key.dynamicViewOriginal]: "크게 보기",
 	[Key.dynamicPreviousImage]: "이전 이미지",
@@ -63,12 +57,15 @@ export const ko: Translation = {
 	[Key.musicFailedLyrics]: "가사를 불러오지 못했습니다",
 	[Key.musicNoSongs]: "곡 없음",
 	[Key.musicError]: "플레이어 오류",
+	[Key.musicVisualizer]: "오디오 시각화",
 	[Key.musicPlay]: "재생",
 	[Key.musicPause]: "일시정지",
 	[Key.musicProgress]: "재생 진행률",
 	[Key.musicCover]: "커버",
 	[Key.musicNoCover]: "커버 이미지 없음",
-	[Key.musicAudioPlayer]: "오디오 플레이어",
+	[Key.musicClose]: "플레이어 닫기",
+	[Key.musicLike]: "즐겨찾기에 추가",
+	[Key.musicUnlike]: "즐겨찾기에서 제거",
 
 	// Announcement
 	[Key.announcement]: "공지사항",
@@ -104,7 +101,6 @@ export const ko: Translation = {
 	[Key.guestbook]: "방명록",
 	[Key.guestbookDescription]:
 		"이곳에 흔적을 남기고 생각과 제안을 공유해 주세요",
-	[Key.untitled]: "제목 없음",
 	[Key.uncategorized]: "미분류",
 	[Key.noTags]: "태그 없음",
 
@@ -134,7 +130,6 @@ export const ko: Translation = {
 	[Key.bangumi]: "Bangumi",
 
 	// Bangumi Filter and Status Text
-	[Key.bangumiTitle]: "나의 Bangumi",
 	[Key.bangumiSubtitle]: "나의 ACG 기록",
 	[Key.bangumiFilterAll]: "전체",
 	[Key.bangumiFilterWatched]: "시청 완료",
@@ -174,15 +169,6 @@ export const ko: Translation = {
 	[Key.bangumiFetchError]: "반구미 데이터 가져오기 실패",
 	[Key.bangumiFetchErrorDesc]:
 		"빌드 중 반구미 API에서 데이터를 가져오지 못했습니다. 이 페이지는 일시적으로 사용할 수 없습니다.",
-	[Key.bangumiUsername]: "사용자 이름",
-	[Key.bangumiApi]: "API",
-	[Key.bangumiConfigTip]:
-		"팁: 페이지 설정에서 올바른 반구미 사용자 이름을 설정하세요",
-	[Key.bangumiPrevPage]: "이전",
-	[Key.bangumiNextPage]: "다음",
-	[Key.bangumiCurrentPage]: "페이지",
-	[Key.bangumiTotalPages]: "/",
-	[Key.bangumiPage]: "페이지",
 
 	// Bangumi Categories
 	[Key.bangumiCategoryBook]: "책",
@@ -193,8 +179,6 @@ export const ko: Translation = {
 
 	// Bangumi Data Update
 	[Key.bangumiLastUpdated]: "데이터 업데이트 날짜",
-	[Key.bangumiUpdatedAt]: "빌드 시각",
-	[Key.bangumiDataStatic]: "정적 데이터",
 
 	// VNDB
 	[Key.vndb]: "VNDB",
@@ -237,27 +221,19 @@ export const ko: Translation = {
 
 	// Anime Tracking - Shared components
 	[Key.animeTotal]: "총계",
-	[Key.animeAverageRating]: "평균 평점",
 	[Key.animeSearch]: "애니메이션 검색...",
-	[Key.animeAllTypes]: "전체",
-	[Key.animeTV]: "TV 애니메이션",
-	[Key.animeMovie]: "극장판",
 	[Key.animeRatingDesc]: "평점 높은 순",
 	[Key.animeRatingAsc]: "평점 낮은 순",
 	[Key.animeDateDesc]: "최신순",
 	[Key.animeDateAsc]: "오래된 순",
 	[Key.animeNoResults]: "일치하는 애니메이션이 없습니다",
 	[Key.animeLastUpdated]: "데이터 업데이트 날짜",
-	[Key.animeEpStatus]: "진행 상황",
 	[Key.animeViewDetails]: "상세 보기",
 	[Key.animeBilibiliAvg]: "Bilibili 평균",
 	[Key.animeNoOverview]: "줄거리 정보 없음",
 	[Key.animeClose]: "닫기",
 	[Key.animeSynopsis]: "줄거리",
 	[Key.animeWatchNow]: "지금 시청하기",
-	[Key.animeAllWithCount]: "전체 ({count})",
-	[Key.animeTVWithCount]: "TV ({count})",
-	[Key.animeMovieWithCount]: "극장판 ({count})",
 	[Key.animeTypeAnime]: "애니메이션",
 	[Key.animeTypeMovie]: "극장판",
 	[Key.animeTypeDocumentary]: "다큐멘터리",
@@ -296,14 +272,9 @@ export const ko: Translation = {
 	[Key.malSeasonFall]: "가을",
 
 	// Pagination
-	[Key.paginationFirst]: "처음",
 	[Key.paginationPrev]: "이전",
 	[Key.paginationNext]: "다음",
-	[Key.paginationLast]: "마지막",
 	[Key.paginationPage]: "페이지",
-	[Key.paginationOf]: "/",
-	[Key.paginationTotal]: ", 총",
-	[Key.paginationRecords]: "개",
 	[Key.paginationJump]: "지정한 페이지로 이동",
 
 	// 404 Page
@@ -348,16 +319,10 @@ export const ko: Translation = {
 	[Key.lastModifiedOutdated]: "일부 내용이 오래되었을 수 있습니다",
 	[Key.lastModifiedDaysAgo]: "{days}일 전",
 	[Key.year]: "년",
-	[Key.month]: "월",
-	[Key.day]: "일",
-	[Key.hour]: "시간",
-	[Key.minute]: "분",
-	[Key.second]: "초",
 
 	// Page Views Statistics
 	[Key.pageViews]: "조회수",
 	[Key.pageViewsLoading]: "불러오는 중...",
-	[Key.pageViewsError]: "통계를 불러올 수 없습니다",
 
 	// Pinned
 	[Key.pinned]: "고정됨",
@@ -423,13 +388,8 @@ export const ko: Translation = {
 	[Key.sponsorTitle]: "저를 후원해 주세요",
 	[Key.sponsorDescription]:
 		"제 콘텐츠가 도움이 되셨다면 아래 방법으로 후원해 주세요. 여러분의 후원은 계속 창작할 수 있는 원동력이 됩니다!",
-	[Key.sponsorMethods]: "결제 방법",
 	[Key.sponsorList]: "후원자",
 	[Key.sponsorEmpty]: "아직 후원자가 없습니다",
-	[Key.sponsorAmount]: "금액",
-	[Key.sponsorDate]: "날짜",
-	[Key.sponsorMessage]: "메시지",
-	[Key.sponsorAnonymous]: "익명",
 	[Key.scanToSponsor]: "스캔하여 후원하기",
 	[Key.sponsorGoTo]: "후원하러 가기",
 	[Key.sponsorButton]: "응원 & 공유",
@@ -442,7 +402,6 @@ export const ko: Translation = {
 	// Site Statistics
 	[Key.siteStats]: "사이트 통계",
 	[Key.siteStatsPostCount]: "게시글",
-	[Key.siteStatsDynamicCount]: "일상",
 	[Key.siteStatsCategoryCount]: "카테고리",
 	[Key.siteStatsTagCount]: "태그",
 	[Key.siteStatsTotalWords]: "총 단어 수",
@@ -498,16 +457,11 @@ export const ko: Translation = {
 	[Key.scanToRead]: "스캔하여 읽기",
 
 	// Code Block Collapsible Configuration
-	[Key.codeCollapsibleShowMore]: "더 보기",
-	[Key.codeCollapsibleShowLess]: "간략히 보기",
-	[Key.codeCollapsibleExpanded]: "코드 블록 펼쳐짐",
-	[Key.codeCollapsibleCollapsed]: "코드 블록 접힘",
 
 	// Gallery Page
 	[Key.gallery]: "갤러리",
 	[Key.galleryDescription]: "삶의 아름다운 순간을 담다",
 	[Key.galleryPhotos]: "장",
-	[Key.galleryAlbums]: "앨범",
 	[Key.galleryNoAlbums]: "아직 앨범이 없습니다",
 	[Key.galleryBackToAlbums]: "앨범으로 돌아가기",
 	[Key.galleryEnterAlbum]: "앨범 보기",
@@ -537,4 +491,20 @@ export const ko: Translation = {
 	[Key.exitImmersiveReading]: "몰입형 읽기 종료",
 	[Key.tocExpand]: "목차 펼치기",
 	[Key.tocCollapse]: "목차 접기",
+
+	// 방문자 인사
+	[Key.greetingDawn]: "곧 새벽이에요",
+	[Key.greetingMorning]: "좋은 아침입니다",
+	[Key.greetingNoon]: "점심 잘 보내세요",
+	[Key.greetingAfternoon]: "좋은 오후입니다",
+	[Key.greetingEvening]: "좋은 저녁입니다",
+	[Key.greetingNight]: "좋은 밤입니다",
+	[Key.greetingLateNight]: "늦게까지 깨어 있네요",
+	[Key.greetingMsg1]: "편하게 둘러보고 가세요.",
+	[Key.greetingMsg2]: "마음에 드는 글이 있으면 좋겠네요.",
+	[Key.greetingMsg3]: "차 한 잔 하면서 천천히 보세요.",
+	[Key.greetingMsg4]: "오랜만이에요, 잘 지내셨나요?",
+	[Key.greetingFirstVisit]: "처음 뵙겠습니다, 환영합니다",
+	[Key.greetingVisitCount]: "{count}번째 방문",
+	[Key.greetingClose]: "인사 닫기",
 };

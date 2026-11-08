@@ -16,9 +16,6 @@ export const BANNER_HEIGHT = 35;
 export const BANNER_HEIGHT_EXTEND = 30;
 export const BANNER_HEIGHT_HOME: number = BANNER_HEIGHT + BANNER_HEIGHT_EXTEND;
 
-// The height the main panel overlaps the banner, unit: rem
-export const MAIN_PANEL_OVERLAPS_BANNER_HEIGHT = 3.5;
-
 // Non-home banner height (unit: vh) — banner mode, desktop only.
 // Lift = BANNER_HEIGHT_HOME(65) - BANNER_HEIGHT_NON_HOME: 45=20vh, 50=15vh, 35=fuwari 30vh.
 export const BANNER_HEIGHT_NON_HOME = 45;
@@ -29,6 +26,3 @@ export const BANNER_HEIGHT_NON_HOME_MIN = 380;
 
 // Page width: rem
 export const PAGE_WIDTH = 100;
-
-// Category constants
-export const UNCATEGORIZED = "uncategorized";

@@ -6,10 +6,8 @@ enum I18nKey {
 	searchNoResults = "searchNoResults",
 	searchTypeSomething = "searchTypeSomething",
 	searchLoading = "searchLoading",
-	searchSummary = "searchSummary",
 	searchContent = "searchContent",
 	searchViewMore = "searchViewMore",
-	other = "other",
 
 	// 导航栏菜单分组
 	navArticles = "navArticles",
@@ -23,7 +21,6 @@ enum I18nKey {
 	allCategories = "allCategories",
 	allTags = "allTags",
 	allSeries = "allSeries",
-	recentPosts = "recentPosts",
 	postList = "postList",
 	tableOfContents = "tableOfContents",
 	tocEmpty = "tocEmpty",
@@ -39,10 +36,7 @@ enum I18nKey {
 	dynamicNoResults = "dynamicNoResults",
 	dynamicLoading = "dynamicLoading",
 	dynamicAllYears = "dynamicAllYears",
-	dynamicLoadMore = "dynamicLoadMore",
-	dynamicBackToList = "dynamicBackToList",
 	dynamicProfile = "dynamicProfile",
-	dynamicPermalink = "dynamicPermalink",
 	dynamicCollapseGallery = "dynamicCollapseGallery",
 	dynamicViewOriginal = "dynamicViewOriginal",
 	dynamicPreviousImage = "dynamicPreviousImage",
@@ -60,7 +54,6 @@ enum I18nKey {
 	commentNotConfigured = "commentNotConfigured",
 	guestbookCommentHint = "guestbookCommentHint",
 
-	untitled = "untitled",
 	uncategorized = "uncategorized",
 	noTags = "noTags",
 
@@ -86,12 +79,15 @@ enum I18nKey {
 	musicFailedLyrics = "musicFailedLyrics",
 	musicNoSongs = "musicNoSongs",
 	musicError = "musicError",
+	musicVisualizer = "musicVisualizer",
 	musicPlay = "musicPlay",
 	musicPause = "musicPause",
 	musicProgress = "musicProgress",
 	musicCover = "musicCover",
 	musicNoCover = "musicNoCover",
-	musicAudioPlayer = "musicAudioPlayer",
+	musicClose = "musicClose",
+	musicLike = "musicLike",
+	musicUnlike = "musicUnlike",
 
 	themeColor = "themeColor",
 
@@ -135,7 +131,6 @@ enum I18nKey {
 	projectStatusArchived = "projectStatusArchived",
 
 	// 番组计划筛选和状态文本
-	bangumiTitle = "bangumiTitle",
 	bangumiSubtitle = "bangumiSubtitle",
 	bangumiFilterAll = "bangumiFilterAll",
 	bangumiFilterWatched = "bangumiFilterWatched",
@@ -171,14 +166,6 @@ enum I18nKey {
 	bangumiNoDataDescription = "bangumiNoDataDescription",
 	bangumiEmpty = "bangumiEmpty",
 	bangumiEmptyReason = "bangumiEmptyReason",
-	bangumiUsername = "bangumiUsername",
-	bangumiApi = "bangumiApi",
-	bangumiConfigTip = "bangumiConfigTip",
-	bangumiPrevPage = "bangumiPrevPage",
-	bangumiNextPage = "bangumiNextPage",
-	bangumiCurrentPage = "bangumiCurrentPage",
-	bangumiTotalPages = "bangumiTotalPages",
-	bangumiPage = "bangumiPage",
 
 	// 番组错误
 	bangumiFetchError = "bangumiFetchError",
@@ -193,8 +180,6 @@ enum I18nKey {
 
 	// 番组数据更新
 	bangumiLastUpdated = "bangumiLastUpdated",
-	bangumiUpdatedAt = "bangumiUpdatedAt",
-	bangumiDataStatic = "bangumiDataStatic",
 
 	// VNDB
 	vndb = "vndb",
@@ -233,27 +218,19 @@ enum I18nKey {
 
 	// 追番 - 公共组件
 	animeTotal = "animeTotal",
-	animeAverageRating = "animeAverageRating",
 	animeSearch = "animeSearch",
-	animeAllTypes = "animeAllTypes",
-	animeTV = "animeTV",
-	animeMovie = "animeMovie",
 	animeRatingDesc = "animeRatingDesc",
 	animeRatingAsc = "animeRatingAsc",
 	animeDateDesc = "animeDateDesc",
 	animeDateAsc = "animeDateAsc",
 	animeNoResults = "animeNoResults",
 	animeLastUpdated = "animeLastUpdated",
-	animeEpStatus = "animeEpStatus",
 	animeViewDetails = "animeViewDetails",
 	animeBilibiliAvg = "animeBilibiliAvg",
 	animeNoOverview = "animeNoOverview",
 	animeClose = "animeClose",
 	animeSynopsis = "animeSynopsis",
 	animeWatchNow = "animeWatchNow",
-	animeAllWithCount = "animeAllWithCount",
-	animeTVWithCount = "animeTVWithCount",
-	animeMovieWithCount = "animeMovieWithCount",
 	animeTypeAnime = "animeTypeAnime",
 	animeTypeMovie = "animeTypeMovie",
 	animeTypeDocumentary = "animeTypeDocumentary",
@@ -289,14 +266,9 @@ enum I18nKey {
 	malSeasonFall = "malSeasonFall",
 
 	// 分页
-	paginationFirst = "paginationFirst",
 	paginationPrev = "paginationPrev",
 	paginationNext = "paginationNext",
-	paginationLast = "paginationLast",
 	paginationPage = "paginationPage",
-	paginationOf = "paginationOf",
-	paginationTotal = "paginationTotal",
-	paginationRecords = "paginationRecords",
 	paginationJump = "paginationJump",
 
 	// 404页面
@@ -336,16 +308,10 @@ enum I18nKey {
 	lastModifiedOutdated = "lastModifiedOutdated",
 	lastModifiedDaysAgo = "lastModifiedDaysAgo",
 	year = "year",
-	month = "month",
-	day = "day",
-	hour = "hour",
-	minute = "minute",
-	second = "second",
 
 	// 访问量统计
 	pageViews = "pageViews",
 	pageViewsLoading = "pageViewsLoading",
-	pageViewsError = "pageViewsError",
 
 	// 置顶
 	pinned = "pinned",
@@ -410,13 +376,8 @@ enum I18nKey {
 	sponsor = "sponsor",
 	sponsorTitle = "sponsorTitle",
 	sponsorDescription = "sponsorDescription",
-	sponsorMethods = "sponsorMethods",
 	sponsorList = "sponsorList",
 	sponsorEmpty = "sponsorEmpty",
-	sponsorAmount = "sponsorAmount",
-	sponsorDate = "sponsorDate",
-	sponsorMessage = "sponsorMessage",
-	sponsorAnonymous = "sponsorAnonymous",
 	scanToSponsor = "scanToSponsor",
 	sponsorGoTo = "sponsorGoTo",
 	sponsorButton = "sponsorButton",
@@ -428,7 +389,6 @@ enum I18nKey {
 	// 站点统计
 	siteStats = "siteStats",
 	siteStatsPostCount = "siteStatsPostCount",
-	siteStatsDynamicCount = "siteStatsDynamicCount",
 	siteStatsCategoryCount = "siteStatsCategoryCount",
 	siteStatsTagCount = "siteStatsTagCount",
 	siteStatsTotalWords = "siteStatsTotalWords",
@@ -484,16 +444,11 @@ enum I18nKey {
 	scanToRead = "scanToRead",
 
 	// 代码块折叠配置
-	codeCollapsibleShowMore = "codeCollapsibleShowMore",
-	codeCollapsibleShowLess = "codeCollapsibleShowLess",
-	codeCollapsibleExpanded = "codeCollapsibleExpanded",
-	codeCollapsibleCollapsed = "codeCollapsibleCollapsed",
 
 	// 相册页面
 	gallery = "gallery",
 	galleryDescription = "galleryDescription",
 	galleryPhotos = "galleryPhotos",
-	galleryAlbums = "galleryAlbums",
 	galleryNoAlbums = "galleryNoAlbums",
 	galleryBackToAlbums = "galleryBackToAlbums",
 	galleryEnterAlbum = "galleryEnterAlbum",
@@ -521,6 +476,22 @@ enum I18nKey {
 	exitImmersiveReading = "exitImmersiveReading",
 	tocExpand = "tocExpand",
 	tocCollapse = "tocCollapse",
+
+	// 访客问候 (visitor greeting)
+	greetingDawn = "greetingDawn",
+	greetingMorning = "greetingMorning",
+	greetingNoon = "greetingNoon",
+	greetingAfternoon = "greetingAfternoon",
+	greetingEvening = "greetingEvening",
+	greetingNight = "greetingNight",
+	greetingLateNight = "greetingLateNight",
+	greetingMsg1 = "greetingMsg1",
+	greetingMsg2 = "greetingMsg2",
+	greetingMsg3 = "greetingMsg3",
+	greetingMsg4 = "greetingMsg4",
+	greetingFirstVisit = "greetingFirstVisit",
+	greetingVisitCount = "greetingVisitCount",
+	greetingClose = "greetingClose",
 }
 
 export default I18nKey;

@@ -1,0 +1,820 @@
+---
+import { Icon } from "astro-icon/components";
+import { greetingConfig } from "@/config/greetingConfig";
+import I18nKey from "@/i18n/i18nKey";
+import { i18n } from "@/i18n/translation";
+import type {
+	GreetingPeriod,
+	GreetingPeriodWindow,
+} from "@/types/greetingConfig";
+
+// 访客问候卡片
+// 访客进入站点时，右下角滑入一张玻璃质感卡片，按时段问候并显示回访次数。
+// 时段与文案全部在 src/config/greetingConfig.ts 中配置；
+// 时段判定必须发生在访客本地时间（服务端时区不可信），因此文案在构建期内联，
+// 由客户端脚本挑选，避免把整套 i18n 表打进客户端产物。
+
+const PERIOD_ICONS: Record<GreetingPeriod, string> = {
+	dawn: "mingcute:sunrise-line",
+	morning: "mingcute:sun-fill",
+	noon: "mingcute:sun-line",
+	afternoon: "mingcute:sun-cloudy-line",
+	evening: "mingcute:sunset-line",
+	night: "mingcute:moon-stars-line",
+	lateNight: "mingcute:moon-fill",
+};
+
+const PERIOD_SALUTATION_KEYS: Record<GreetingPeriod, I18nKey> = {
+	dawn: I18nKey.greetingDawn,
+	morning: I18nKey.greetingMorning,
+	noon: I18nKey.greetingNoon,
+	afternoon: I18nKey.greetingAfternoon,
+	evening: I18nKey.greetingEvening,
+	night: I18nKey.greetingNight,
+	lateNight: I18nKey.greetingLateNight,
+};
+
+const allPeriods = Object.keys(PERIOD_ICONS) as GreetingPeriod[];
+
+// 时段为空时退化成「全天一个时段」，避免配置被清空后卡片无法显示
+const periods: GreetingPeriodWindow[] =
+	greetingConfig.periods.length > 0
+		? greetingConfig.periods.filter((w) => w.start !== w.end)
+		: [{ period: "night", start: 0, end: 24 }];
+
+// 统一文案池：配置为空时回落到 i18n 内置的四句
+const defaultMessages = [
+	i18n(I18nKey.greetingMsg1),
+	i18n(I18nKey.greetingMsg2),
+	i18n(I18nKey.greetingMsg3),
+	i18n(I18nKey.greetingMsg4),
+].filter(Boolean);
+const baseMessages =
+	greetingConfig.messages.length > 0
+		? greetingConfig.messages
+		: defaultMessages;
+
+// 按页面实际用到的时段裁剪，只把需要的文案下发到客户端
+const usedPeriods = new Set<GreetingPeriod>(periods.map((w) => w.period));
+
+const salutations: Partial<Record<GreetingPeriod, string>> = {};
+const messagePools: Partial<Record<GreetingPeriod, string[]>> = {};
+for (const period of allPeriods) {
+	if (!usedPeriods.has(period)) continue;
+	salutations[period] =
+		greetingConfig.salutation[period] || i18n(PERIOD_SALUTATION_KEYS[period]);
+	const periodPool = greetingConfig.messagesByPeriod[period];
+	messagePools[period] =
+		periodPool && periodPool.length > 0 ? periodPool : baseMessages;
+}
+
+const payload = {
+	periods,
+	salutations,
+	messagePools,
+	firstVisitLabel: i18n(I18nKey.greetingFirstVisit),
+	visitCountTemplate: i18n(I18nKey.greetingVisitCount),
+	autoHide: Math.max(0, greetingConfig.autoHide),
+	oncePerSession: greetingConfig.oncePerSession,
+	countVisits: greetingConfig.countVisits,
+	showOnMobile: greetingConfig.showOnMobile,
+	delay: 900,
+};
+
+// 序列化进 <script type="application/json">：转义 < 防止文案中的 "</script>" 提前闭合标签
+const payloadJson = JSON.stringify(payload).replace(/</g, "\\u003c");
+
+const closeLabel = i18n(I18nKey.greetingClose);
+const hasTimer = greetingConfig.autoHide > 0;
+---
+
+{
+	greetingConfig.enable && (
+		<div
+			id="visitor-greeting"
+			class="visitor-greeting"
+			role="status"
+			aria-atomic="true"
+			data-period="night"
+			hidden
+			style={`--vg-z:${greetingConfig.zIndex};--vg-autohide:${greetingConfig.autoHide}ms`}
+		>
+			<div class="vg-inner">
+				<div class="vg-aurora" aria-hidden="true" />
+
+				<div class="vg-icon" aria-hidden="true">
+					{allPeriods
+						.filter((period) => usedPeriods.has(period))
+						.map((period) => (
+							<span class="vg-icon-slot" data-icon={period}>
+								<Icon name={PERIOD_ICONS[period]} />
+							</span>
+						))}
+				</div>
+
+				<div class="vg-body">
+					<p class="vg-salutation">
+						<span class="vg-salutation-text" />
+					</p>
+					<p class="vg-message">
+						<span class="vg-message-text" />
+					</p>
+					<p class="vg-visit" hidden>
+						<span class="vg-visit-dot" aria-hidden="true" />
+						<span class="vg-visit-text" />
+					</p>
+				</div>
+
+				<button class="vg-close" type="button" aria-label={closeLabel}>
+					<Icon name="mingcute:close-line" />
+				</button>
+
+				{hasTimer && (
+					<div class="vg-timer" aria-hidden="true">
+						<span />
+					</div>
+				)}
+			</div>
+		</div>
+	)
+}
+
+{greetingConfig.enable && (
+	<script
+		type="application/json"
+		id="visitor-greeting-payload"
+		set:html={payloadJson}
+	/>
+)}
+
+<script>
+	interface GreetingPayload {
+		periods: Array<{ period: string; start: number; end: number }>;
+		salutations: Record<string, string>;
+		messagePools: Record<string, string[]>;
+		firstVisitLabel: string;
+		visitCountTemplate: string;
+		autoHide: number;
+		oncePerSession: boolean;
+		countVisits: boolean;
+		showOnMobile: boolean;
+		delay: number;
+	}
+
+	const STORAGE_KEY = "firefly:visitorGreeting";
+	const SESSION_KEY = "firefly:visitorGreetingShown";
+
+	interface StoredState {
+		count: number;
+		lastMessage?: string;
+	}
+
+	/** 本地存储可能因隐私模式/配额策略抛错，读写一律降级为「没有历史」 */
+	function readStored(): StoredState {
+		try {
+			const raw = localStorage.getItem(STORAGE_KEY);
+			if (!raw) return { count: 0 };
+			const parsed = JSON.parse(raw) as Partial<StoredState>;
+			return {
+				count:
+					typeof parsed.count === "number" && parsed.count >= 0
+						? parsed.count
+						: 0,
+				lastMessage:
+					typeof parsed.lastMessage === "string"
+						? parsed.lastMessage
+						: undefined,
+			};
+		} catch {
+			return { count: 0 };
+		}
+	}
+
+	function writeStored(state: StoredState): void {
+		try {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+		} catch {
+			// 忽略：无痕模式或用户禁用存储时只是失去回访计数
+		}
+	}
+
+	function alreadyShown(): boolean {
+		try {
+			return sessionStorage.getItem(SESSION_KEY) === "1";
+		} catch {
+			return false;
+		}
+	}
+
+	function markShown(): void {
+		try {
+			sessionStorage.setItem(SESSION_KEY, "1");
+		} catch {
+			// 同上，忽略
+		}
+	}
+
+	/**
+	 * 按时段窗口判定问候语类别。
+	 * end < start 表示跨越午夜；配置有空档时退回距离最近的时段，而不是硬编码兜底值。
+	 */
+	function resolvePeriod(
+		hour: number,
+		periods: GreetingPayload["periods"],
+	): string {
+		for (const w of periods) {
+			if (w.start < w.end) {
+				if (hour >= w.start && hour < w.end) return w.period;
+			} else if (hour >= w.start || hour < w.end) {
+				return w.period;
+			}
+		}
+
+		let best = periods[0]?.period ?? "night";
+		let bestDistance = Number.POSITIVE_INFINITY;
+		for (const w of periods) {
+			const distance = Math.min(
+				(w.start - hour + 24) % 24,
+				(hour - w.start + 24) % 24,
+			);
+			if (distance < bestDistance) {
+				bestDistance = distance;
+				best = w.period;
+			}
+		}
+		return best;
+	}
+
+	/** 尽量避开上次看过的那句，让回访时的问候不重复 */
+	function pickMessage(pool: string[], lastMessage?: string): string {
+		if (pool.length === 0) return "";
+		if (pool.length === 1) return pool[0];
+		const candidates = lastMessage
+			? pool.filter((message) => message !== lastMessage)
+			: pool;
+		const list = candidates.length > 0 ? candidates : pool;
+		return list[Math.floor(Math.random() * list.length)];
+	}
+
+	function setup(layout: GreetingPayload): void {
+		const card = document.getElementById("visitor-greeting");
+		if (!card) return;
+
+		// 移动端可关闭：宁可整段跳过，也不白白写入访问计数
+		if (
+			!layout.showOnMobile &&
+			window.matchMedia("(max-width: 767px)").matches
+		) {
+			return;
+		}
+
+		if (layout.oncePerSession && alreadyShown()) return;
+
+		const stored = readStored();
+		// 本次访问的序号：首次访问为 1
+		const visitCount = stored.count + 1;
+
+		const period = resolvePeriod(new Date().getHours(), layout.periods);
+		const salutation =
+			layout.salutations[period] ?? layout.salutations.night ?? "";
+		const pool = layout.messagePools[period] ?? [];
+		const message = pickMessage(pool, stored.lastMessage);
+
+		const salutationEl = card.querySelector(".vg-salutation-text");
+		const messageEl = card.querySelector(".vg-message-text");
+		const visitEl = card.querySelector<HTMLElement>(".vg-visit");
+		const visitTextEl = card.querySelector(".vg-visit-text");
+
+		if (salutationEl) salutationEl.textContent = salutation;
+		if (messageEl) messageEl.textContent = message;
+
+		if (layout.countVisits && visitEl && visitTextEl) {
+			visitTextEl.textContent =
+				visitCount <= 1
+					? layout.firstVisitLabel
+					: layout.visitCountTemplate.replace("{count}", String(visitCount));
+			visitEl.hidden = false;
+		}
+
+		card.dataset.period = period;
+
+		markShown();
+		writeStored({ count: visitCount, lastMessage: message });
+
+		const reveal = (): void => {
+			card.hidden = false;
+			// 双帧等待：先让 hidden 移除后的样式生效，再切可见类，否则过渡会被浏览器合并掉
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => card.classList.add("is-visible"));
+			});
+		};
+
+		// 文本在卡片仍 hidden 时写入：此时 role="status" 还不在无障碍树里，
+		// 解除 hidden 后读屏会把它当作新出现的状态整体播报，而不是逐段播报三次
+
+		// ---- 自动收起：悬停/聚焦暂停，移开后按剩余时间继续 ----
+		let timerId: number | null = null;
+		let remaining = layout.autoHide;
+		let startedAt = 0;
+		let dismissed = false;
+
+		const dismiss = (): void => {
+			if (dismissed) return;
+			dismissed = true;
+			if (timerId !== null) {
+				window.clearTimeout(timerId);
+				timerId = null;
+			}
+			card.classList.remove("is-visible");
+			card.classList.add("is-leaving");
+			window.setTimeout(() => {
+				card.hidden = true;
+				card.classList.remove("is-leaving");
+			}, 480);
+		};
+
+		const resume = (): void => {
+			if (dismissed || layout.autoHide <= 0) return;
+			card.classList.remove("is-paused");
+			startedAt = performance.now();
+			timerId = window.setTimeout(dismiss, remaining);
+		};
+
+		const pause = (): void => {
+			if (dismissed) return;
+			// 计时尚未启动（如卡片刚出现、键盘先聚焦）时也要标记暂停，
+			// 否则 resume 时会把完整时长再走一遍
+			if (timerId !== null) {
+				window.clearTimeout(timerId);
+				timerId = null;
+				remaining = Math.max(0, remaining - (performance.now() - startedAt));
+			}
+			card.classList.add("is-paused");
+		};
+
+		card
+			.querySelector(".vg-close")
+			?.addEventListener("click", () => dismiss());
+
+		// 外层容器 pointer-events: none（不挡住页面），且 pointerenter 不冒泡，
+		// 所以悬停暂停必须挂在内层可交互元素上
+		const inner = card.querySelector(".vg-inner");
+		let isHovering = false;
+		inner?.addEventListener("pointerenter", () => {
+			isHovering = true;
+			pause();
+		});
+		inner?.addEventListener("pointerleave", () => {
+			isHovering = false;
+			if (!card.matches(":focus-within")) resume();
+		});
+		card.addEventListener("focusin", pause);
+		card.addEventListener("focusout", () => {
+			// 焦点可能在同一张卡片内移动到关闭按钮，等事件队列清空再判断
+			requestAnimationFrame(() => {
+				if (!isHovering && !card.matches(":focus-within")) resume();
+			});
+		});
+
+		document.addEventListener("keydown", (event) => {
+			if (event.key === "Escape" && (isHovering || card.matches(":focus-within"))) {
+				dismiss();
+			}
+		});
+
+		// 后台标签页里不消耗问候时长：等页面真正可见时再出现
+		if (document.visibilityState === "hidden") {
+			document.addEventListener(
+				"visibilitychange",
+				() => {
+					if (document.visibilityState !== "visible") return;
+					window.setTimeout(reveal, layout.delay);
+					resume();
+				},
+				{ once: true },
+			);
+			return;
+		}
+
+		window.setTimeout(() => {
+			reveal();
+			resume();
+		}, layout.delay);
+	}
+
+	// Swup 切页会重跑模块脚本，这里用全局守卫保证只初始化一次
+	if (!window.__fireflyGreetingInit) {
+		window.__fireflyGreetingInit = true;
+		const node = document.getElementById("visitor-greeting-payload");
+		if (node?.textContent) {
+			try {
+				setup(JSON.parse(node.textContent) as GreetingPayload);
+			} catch (error) {
+				console.warn("[Greeting] init failed:", error);
+			}
+		}
+	}
+</script>
+
+<style>
+	/* 外层只负责定位，不参与动画：
+	   带 transform / filter / will-change 的祖先会建立新的包含块，
+	   让子元素的 backdrop-filter 采不到页面背景，毛玻璃会失效 */
+	.visitor-greeting {
+		position: fixed;
+		z-index: var(--vg-z, 900);
+		right: 4.5rem;
+		bottom: 1.25rem;
+		width: min(23rem, calc(100vw - 6rem));
+		pointer-events: none;
+	}
+
+	.visitor-greeting[hidden] {
+		display: none;
+	}
+
+	/* 时段配色：图标、描边、辉光都跟着时段走，卡片整体色调随昼夜变化 */
+	.visitor-greeting[data-period="dawn"] {
+		--vg-accent: oklch(0.78 0.13 55);
+	}
+	.visitor-greeting[data-period="morning"] {
+		--vg-accent: oklch(0.82 0.14 85);
+	}
+	.visitor-greeting[data-period="noon"] {
+		--vg-accent: oklch(0.84 0.15 95);
+	}
+	.visitor-greeting[data-period="afternoon"] {
+		--vg-accent: oklch(0.76 0.12 220);
+	}
+	.visitor-greeting[data-period="evening"] {
+		--vg-accent: oklch(0.72 0.16 45);
+	}
+	.visitor-greeting[data-period="night"] {
+		--vg-accent: oklch(0.72 0.12 285);
+	}
+	.visitor-greeting[data-period="lateNight"] {
+		--vg-accent: oklch(0.66 0.13 300);
+	}
+
+	.vg-inner {
+		position: relative;
+		display: flex;
+		align-items: flex-start;
+		gap: 0.875rem;
+		padding: 1rem 1rem 1rem 1rem;
+		border-radius: calc(var(--radius-large) + 0.25rem);
+		overflow: hidden;
+		isolation: isolate;
+
+		background: linear-gradient(
+			155deg,
+			color-mix(in oklch, var(--card-bg) 94%, var(--vg-accent, var(--primary)) 6%),
+			color-mix(in oklch, var(--card-bg) 84%, transparent)
+		);
+		backdrop-filter: blur(22px) saturate(1.45);
+		-webkit-backdrop-filter: blur(22px) saturate(1.45);
+		border: 1px solid
+			color-mix(in oklch, var(--vg-accent, var(--primary)) 26%, var(--line-divider));
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.4),
+			0 20px 46px -20px
+				color-mix(in oklch, var(--vg-accent, var(--primary)) 60%, transparent),
+			0 8px 22px -14px rgba(0, 0, 0, 0.3);
+
+		opacity: 0;
+		transform: translate3d(1.75rem, 1rem, 0) scale(0.94);
+		transition:
+			opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+			transform 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	:global(.dark) .vg-inner {
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.07),
+			0 20px 46px -20px
+				color-mix(in oklch, var(--vg-accent, var(--primary)) 55%, transparent),
+			0 8px 22px -14px rgba(0, 0, 0, 0.6);
+	}
+
+	.visitor-greeting.is-visible .vg-inner {
+		opacity: 1;
+		transform: translate3d(0, 0, 0) scale(1);
+		pointer-events: auto;
+	}
+
+	.visitor-greeting.is-leaving .vg-inner {
+		opacity: 0;
+		transform: translate3d(0.75rem, 0.5rem, 0) scale(0.96);
+		pointer-events: none;
+	}
+
+	/* 卡片内的一团柔光，缓慢漂移 —— 静止时也有生命感 */
+	.vg-aurora {
+		position: absolute;
+		top: -40%;
+		right: -25%;
+		width: 12rem;
+		height: 12rem;
+		border-radius: 999px;
+		background: radial-gradient(
+			circle,
+			color-mix(in oklch, var(--vg-accent, var(--primary)) 45%, transparent),
+			transparent 68%
+		);
+		opacity: 0.5;
+		filter: blur(18px);
+		pointer-events: none;
+		animation: vg-aurora-drift 11s ease-in-out infinite;
+	}
+
+	.vg-icon {
+		position: relative;
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border-radius: 0.9rem;
+		color: var(--vg-accent, var(--primary));
+		background: color-mix(in oklch, var(--vg-accent, var(--primary)) 15%, transparent);
+		box-shadow: inset 0 0 0 1px
+			color-mix(in oklch, var(--vg-accent, var(--primary)) 28%, transparent);
+		font-size: 1.5rem;
+	}
+
+	/* 图标外圈呼吸光晕 */
+	.vg-icon::after {
+		content: "";
+		position: absolute;
+		inset: -0.4rem;
+		border-radius: 1.2rem;
+		background: radial-gradient(
+			circle,
+			color-mix(in oklch, var(--vg-accent, var(--primary)) 34%, transparent),
+			transparent 70%
+		);
+		animation: vg-breathe 3.8s ease-in-out infinite;
+		pointer-events: none;
+	}
+
+	.vg-icon-slot {
+		display: none;
+		grid-area: 1 / 1;
+		line-height: 0;
+	}
+
+	/* 只显示当前时段的图标，其余留在 DOM 里做占位，避免切换时抖动 */
+	.visitor-greeting[data-period="dawn"] .vg-icon-slot[data-icon="dawn"],
+	.visitor-greeting[data-period="morning"] .vg-icon-slot[data-icon="morning"],
+	.visitor-greeting[data-period="noon"] .vg-icon-slot[data-icon="noon"],
+	.visitor-greeting[data-period="afternoon"] .vg-icon-slot[data-icon="afternoon"],
+	.visitor-greeting[data-period="evening"] .vg-icon-slot[data-icon="evening"],
+	.visitor-greeting[data-period="night"] .vg-icon-slot[data-icon="night"],
+	.visitor-greeting[data-period="lateNight"] .vg-icon-slot[data-icon="lateNight"] {
+		display: block;
+	}
+
+	.vg-body {
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		padding-right: 0.5rem;
+	}
+
+	/* 逐行上浮入场：标题 → 正文 → 回访信息，各差 90ms */
+	.vg-body > * {
+		margin: 0;
+		opacity: 0;
+		transform: translateY(0.45rem);
+		transition:
+			opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+			transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	.visitor-greeting.is-visible .vg-body > * {
+		opacity: 1;
+		transform: translateY(0);
+	}
+
+	.visitor-greeting.is-visible .vg-salutation {
+		transition-delay: 0.14s;
+	}
+	.visitor-greeting.is-visible .vg-message {
+		transition-delay: 0.23s;
+	}
+	.visitor-greeting.is-visible .vg-visit {
+		transition-delay: 0.32s;
+	}
+
+	.vg-salutation {
+		font-size: 1.0625rem;
+		font-weight: 700;
+		line-height: 1.35;
+		letter-spacing: 0.01em;
+		color: var(--deep-text, currentColor);
+	}
+
+	/* 暗色下 --deep-text 仍为深色，需覆盖为亮色文字（与 StepItem / TimelineItem 一致） */
+	:global(.dark) .vg-salutation {
+		color: var(--btn-content);
+	}
+
+	.vg-message {
+		font-size: 0.8125rem;
+		line-height: 1.55;
+		color: var(--content-meta, currentColor);
+	}
+
+	.vg-visit {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin-top: 0.4375rem;
+		font-size: 0.6875rem;
+		letter-spacing: 0.02em;
+		color: color-mix(in oklch, var(--vg-accent, var(--primary)) 70%, var(--content-meta));
+	}
+
+	.vg-visit[hidden] {
+		display: none;
+	}
+
+	.vg-visit-dot {
+		width: 0.3125rem;
+		height: 0.3125rem;
+		border-radius: 999px;
+		background: var(--vg-accent, var(--primary));
+		box-shadow: 0 0 0 0.1875rem
+			color-mix(in oklch, var(--vg-accent, var(--primary)) 22%, transparent);
+	}
+
+	.vg-close {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.5rem;
+		display: grid;
+		place-items: center;
+		width: 1.5rem;
+		height: 1.5rem;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--content-meta, currentColor);
+		font-size: 0.875rem;
+		cursor: pointer;
+		opacity: 0;
+		transform: scale(0.85);
+		transition:
+			opacity 0.2s ease,
+			transform 0.2s ease,
+			background-color 0.2s ease;
+	}
+
+	.vg-inner:hover .vg-close,
+	.vg-close:focus-visible {
+		opacity: 1;
+		transform: scale(1);
+	}
+
+	.vg-close:hover {
+		background: color-mix(in oklch, var(--vg-accent, var(--primary)) 18%, transparent);
+	}
+
+	.vg-close:focus-visible {
+		outline: 2px solid var(--vg-accent, var(--primary));
+		outline-offset: 2px;
+	}
+
+	/* 触屏没有 hover，关闭按钮必须常驻，否则无法关闭 */
+	@media (hover: none), (pointer: coarse) {
+		.vg-close {
+			opacity: 0.7;
+			transform: scale(1);
+		}
+	}
+
+	/* 底部发丝进度条：把「还剩多久消失」直接画出来 */
+	.vg-timer {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 1.5px;
+		overflow: hidden;
+		background: color-mix(in oklch, var(--vg-accent, var(--primary)) 10%, transparent);
+	}
+
+	.vg-timer > span {
+		display: block;
+		height: 100%;
+		width: 100%;
+		transform: scaleX(0);
+		transform-origin: left center;
+		background: linear-gradient(
+			90deg,
+			color-mix(in oklch, var(--vg-accent, var(--primary)) 85%, transparent),
+			color-mix(in oklch, var(--vg-accent, var(--primary)) 35%, transparent)
+		);
+	}
+
+	.visitor-greeting.is-visible .vg-timer > span {
+		animation: vg-countdown var(--vg-autohide, 9s) linear forwards;
+	}
+
+	.visitor-greeting.is-paused .vg-timer > span {
+		animation-play-state: paused;
+	}
+
+	@keyframes vg-countdown {
+		from {
+			transform: scaleX(0);
+		}
+		to {
+			transform: scaleX(1);
+		}
+	}
+
+	@keyframes vg-breathe {
+		0%,
+		100% {
+			opacity: 0.35;
+			transform: scale(0.94);
+		}
+		50% {
+			opacity: 0.75;
+			transform: scale(1.06);
+		}
+	}
+
+	@keyframes vg-aurora-drift {
+		0%,
+		100% {
+			transform: translate3d(0, 0, 0) scale(1);
+		}
+		50% {
+			transform: translate3d(-1.5rem, 1rem, 0) scale(1.15);
+		}
+	}
+
+	/* 移动端：贴右下、让开悬浮按钮列的宽度，避免遮挡 */
+	@media (max-width: 767px) {
+		.visitor-greeting {
+			right: 4.25rem;
+			bottom: 1rem;
+			width: min(21rem, calc(100vw - 5.25rem));
+		}
+
+		.vg-inner {
+			padding: 0.875rem;
+			gap: 0.75rem;
+		}
+
+		.vg-icon {
+			width: 2.25rem;
+			height: 2.25rem;
+			font-size: 1.25rem;
+		}
+
+		.vg-salutation {
+			font-size: 1rem;
+		}
+
+		.vg-message {
+			font-size: 0.78125rem;
+		}
+	}
+
+	/* 沉浸阅读时不打扰 */
+	:global(body.immersive-reading) .visitor-greeting {
+		display: none;
+	}
+
+	@media print {
+		.visitor-greeting {
+			display: none !important;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.vg-inner,
+		.vg-body > * {
+			transition-duration: 0.01ms;
+		}
+
+		.visitor-greeting.is-visible .vg-body > * {
+			transition-delay: 0s;
+		}
+
+		.vg-icon::after,
+		.vg-aurora,
+		.visitor-greeting.is-visible .vg-timer > span {
+			animation: none;
+		}
+
+		.vg-aurora {
+			opacity: 0.35;
+		}
+	}
+</style>

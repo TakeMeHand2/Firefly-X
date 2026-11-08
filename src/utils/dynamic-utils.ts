@@ -13,9 +13,6 @@ export const sortDynamics = (
 export const dynamicSlug = (id: string): string =>
 	id.replace(/\.(md|mdx)$/i, "");
 
-export const dynamicAnchor = (id: string): string =>
-	`dynamic-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-
 export const dynamicPlainText = (entry: CollectionEntry<"dynamic">): string =>
 	(entry.body || "")
 		.replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
