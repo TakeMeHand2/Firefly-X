@@ -137,7 +137,10 @@ async function evl(cdp, expression) {
 		await cdp.send("Emulation.setEmulatedMedia", {
 			features: [{ name: "prefers-reduced-motion", value: "no-preference" }]
 		});
-		const url = `http://127.0.0.1:${SERVE_PORT}/?mvz=1&rm=0&seed=7&grid=${GRID}` +
+		// --grid 0 表示不注入 grid=，让 ?q=N 画质档自己决定网格密度。
+		// 否则 GRID_OVERRIDE 会盖掉 QUALITY[tierIdx].grid，q=0 测的其实还是 96。
+		const gridQs = GRID === "0" ? "" : `&grid=${GRID}`;
+		const url = `http://127.0.0.1:${SERVE_PORT}/?mvz=1&rm=0&seed=7${gridQs}` +
 			`&stim=${encodeURIComponent(STIM)}${FIXED ? "&fixed=1" : ""}` +
 			(EXTRA_QS ? `&${EXTRA_QS}` : "");
 		console.log("URL:", url);

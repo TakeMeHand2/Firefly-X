@@ -320,6 +320,32 @@ const progressLabel = i18n(I18nKey.musicProgress);
     // （FINDINGS §13）；?liftEnd=0.42 可一键退回「严格对齐壁纸曲线」的基线。
     var LIFT_END = gainParam('liftEnd', 0.75);
 
+    // 构图归因旋钮（FINDINGS §14）：把「暖核面积 / 色相集中度」的差距拆成
+    // 五个可单变量调节的几何量。缺省值 = 当前产品值，不传参逐字节一致。
+    // 与上面的调色旋钮同一约定：是测量台的一部分，不是产品功能。
+    function numParam(name, fallback, lo, hi) {
+        var m = new RegExp('[?&]' + name + '=([-0-9.]+)').exec(QS);
+        if (!m) return fallback;
+        var v = parseFloat(m[1]);
+        return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback;
+    }
+    var GEO = {
+        camDist:  numParam('camDist',  72,   30,  140),
+        camPitch: numParam('camPitch', 22,    5,   60),
+        camYaw:   numParam('camYaw',   120,   0,  360),
+        subR:     numParam('subR',     0.32, 0.10, 0.90),
+        fallOut:  numParam('fallOut',  0.71, 0.30, 1.20),
+        fallIn:   numParam('fallIn',   0.36, 0.05, 0.90),
+        fadeIn:   numParam('fadeIn',   0.48, 0.10, 0.90),
+        fadeOut:  numParam('fadeOut',  0.89, 0.50, 1.30),
+        // 中心隆起的幅度（只影响 subRegion 内的柱子，外围不变）。
+        // 8.0 是构图归因后的实测最优（FINDINGS §14）：琥珀 0.23→1.07%、
+        // 集中度 0.76→0.68，而 mean 只从 0.082 到 0.085。
+        // ?subAmp=7 可退回基线；与 subR（放大范围）不同，它只加高度不加面积，
+        // 因而不会像 subR=0.60 那样把整片地形抬亮。
+        subAmp:   numParam('subAmp',   8.0,  1.0, 16.0)
+    };
+
     // ── 调色板 ───────────────────────────────────────────────
     // 八段，逐项对齐 Wallpaper Engine《音域回响》(Sonic Topography) 的
     // nocturnal「霁紫」主题（workshopid 3747222633，v15）。
@@ -604,6 +630,10 @@ const progressLabel = i18n(I18nKey.musicProgress);
         'uniform float uTime;',
         'uniform float uHalf;',
         'uniform float uRange;',
+        'uniform float uSubR;',
+        'uniform float uSubAmp;',
+        'uniform float uFallOut;',
+        'uniform float uFallIn;',
         'uniform float uIdleWave;',
         'uniform float uDensity;',
         'uniform float uSmoothness;',
@@ -685,7 +715,7 @@ const progressLabel = i18n(I18nKey.musicProgress);
         // 原先 0.60/0.30 把音频响应圈在一个更小的核里——同样幅值的鼓点，
         // 壁纸能推到 60 单位外，这里 50 单位就没了。半径 +20%、面积 +44%，
         // 「整片地面跟着音乐动」的感觉一半来自这条曲线，另一半才来自幅值。
-        '  float falloff = smoothstep(uHalf * 0.71 * uRange, uHalf * 0.36 * uRange, dist);',
+        '  float falloff = smoothstep(uHalf * uFallOut * uRange, uHalf * uFallIn * uRange, dist);',
         '',
         '  // ── 底噪：两路同族噪声拼出「海面」，静音时场景也不死 ──',
         '  float n1 = snoise(p * 0.055 + vec2(uTime * 0.11, uTime * 0.045));',
@@ -702,8 +732,11 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '  float elevation = idleBase * 0.8 * falloff;',
         '',
         '  // ── 超低频：中心整块隆起，是「呼吸」位 ──',
-        '  float subRegion = pow(1.0 - smoothstep(0.0, uHalf * 0.32 * uRange, dist + n1 * 7.0), 1.5);',
-        '  float subLift = easeLift(uSubBass, 7.0) * subRegion * uCentral;',
+        '  // 幅度 uSubAmp=8.0（壁纸 6.0，但本端 grid 96 / dist 72 与它的',
+        '  // grid 160 / dist 85 分布不同，幅度不可照搬）。放大它只把中心',
+        '  // 柱子推过琥珀门限，外围 elevation 不变，故不与整体曝光耦合。',
+        '  float subRegion = pow(1.0 - smoothstep(0.0, uHalf * uSubR * uRange, dist + n1 * 7.0), 1.5);',
+        '  float subLift = easeLift(uSubBass, uSubAmp) * subRegion * uCentral;',
         '  float peak = clamp(subLift / 6.0, 0.0, 1.0);',
         '',
         '  // ── 低频：环带里成片跳动，每根柱子的随机高度差制造颗粒感 ──',
@@ -893,6 +926,8 @@ const progressLabel = i18n(I18nKey.musicProgress);
         'uniform float uPunchGain;',
         'uniform float uTailGain;',
         'uniform float uLiftEnd;',
+        'uniform float uFadeIn;',
+        'uniform float uFadeOut;',
         '',
         'float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123); }',
         '',
@@ -923,7 +958,7 @@ const progressLabel = i18n(I18nKey.musicProgress);
         '  // 被 tilt 削顶（§1.2），不是量程本身，勿混为一谈。',
         '  float norm = clamp(elevation / 8.5, 0.0, 1.0);',
         '  float lift = smoothstep(0.0, uLiftEnd, norm);',
-        '  float distFade = 1.0 - smoothstep(uHalf * 0.48, uHalf * 0.89, dist);',
+        '  float distFade = 1.0 - smoothstep(uHalf * uFadeIn, uHalf * uFadeOut, dist);',
         '',
         '  // 空间暖度：壁纸的 warmBlend——音色越暖、离岛心越近，色相越往',
         '  // 品红紫偏，外围回落冷紫。这是那张图「中心透、边缘沉」的来源，',
@@ -1286,7 +1321,8 @@ const progressLabel = i18n(I18nKey.musicProgress);
             'uBg', 'uDeep', 'uCore', 'uEdge', 'uWarm', 'uWarmEdge', 'uRip', 'uPeak',
             'uWarmth', 'uGlow', 'uPeakAmt',
             'uSharp', 'uAir', 'uBrill', 'uPres', 'uPunch', 'uPan',
-            'uPunchGain', 'uTailGain', 'uLiftEnd'];
+            'uPunchGain', 'uTailGain', 'uLiftEnd',
+            'uSubR', 'uSubAmp', 'uFallOut', 'uFallIn', 'uFadeIn', 'uFadeOut'];
         // 数组 uniform 的位置查询有坑：规范允许用「uField」这种基名去查，
         // 等价于 uField[0]，但 ANGLE / SwiftShader 上实测会返回 null，
         // 而 set4fv 里的 if (uni[name]) 会把 null 静默吞掉——整套波前与
@@ -1830,9 +1866,9 @@ const progressLabel = i18n(I18nKey.musicProgress);
     var camPos = [0, 0, 0];
 
     var cam = {
-        yaw: 120,
-        pitch: 22,
-        dist: 72,
+        yaw: GEO.camYaw,
+        pitch: GEO.camPitch,
+        dist: GEO.camDist,
         yawOff: 0,
         pitchOff: 0,
         px: 0,
@@ -3191,6 +3227,12 @@ const progressLabel = i18n(I18nKey.musicProgress);
             set1f('uPunchGain', PUNCH_GAIN);
             set1f('uTailGain', TAIL_GAIN);
             set1f('uLiftEnd', LIFT_END);
+            set1f('uSubR', GEO.subR);
+            set1f('uSubAmp', GEO.subAmp);
+            set1f('uFallOut', GEO.fallOut);
+            set1f('uFallIn', GEO.fallIn);
+            set1f('uFadeIn', GEO.fadeIn);
+            set1f('uFadeOut', GEO.fadeOut);
 
             bindMainAttribs();
 
