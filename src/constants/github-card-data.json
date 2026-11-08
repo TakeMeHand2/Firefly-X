@@ -1,7 +1,7 @@
 {
 	"takemehand2/firefly-x": {
 		"description": "🍀Firefly, fresh and aesthetic Astro blog theme template. ",
-		"language": null,
+		"language": "Astro",
 		"avatarUrl": "https://avatars.githubusercontent.com/u/308291088?v=4",
 		"license": "MIT"
 	}
