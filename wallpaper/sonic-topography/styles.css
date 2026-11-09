@@ -1,0 +1,687 @@
+/* 界面尺寸与颜色取自原壁纸组件；WE 属性面板部分为本项目补的浏览器外壳。 */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	background: #05050f;
+	font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+	-webkit-font-smoothing: antialiased;
+	transition: background-color 800ms ease;
+}
+
+#gl {
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+	z-index: 0;
+}
+
+/* ---------------- 播放器 ---------------- */
+
+.player {
+	position: fixed;
+	z-index: 50;
+	top: 3vh;
+	right: 2vw;
+	opacity: 0;
+	transform: scale(0.92) translateY(-8px);
+	transform-origin: top right;
+	pointer-events: none;
+	transition:
+		opacity 600ms cubic-bezier(0.4, 0, 0.2, 1),
+		transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+	--pw: 420px;
+	--cover: 110px;
+	--pad: 20px;
+	--gap: 18px;
+	--title-size: 18px;
+	--artist-size: 13.5px;
+	--progress-h: 5px;
+	--time-size: 11px;
+}
+
+.player.visible {
+	opacity: 1;
+	transform: scale(1) translateY(0);
+	pointer-events: auto;
+}
+
+.player-card {
+	width: var(--pw);
+	background: rgba(0, 0, 0, 0.45);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 18px;
+	box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	backdrop-filter: blur(0px) saturate(1);
+	-webkit-backdrop-filter: blur(0px) saturate(1);
+	transition: backdrop-filter 600ms cubic-bezier(0.4, 0, 0.2, 1);
+	overflow: hidden;
+}
+
+.player.visible .player-card {
+	backdrop-filter: blur(24px) saturate(1.4);
+	-webkit-backdrop-filter: blur(24px) saturate(1.4);
+}
+
+.player-row {
+	display: flex;
+	align-items: center;
+	gap: var(--gap);
+	padding: var(--pad);
+}
+
+.cover-wrap {
+	position: relative;
+	width: var(--cover);
+	height: var(--cover);
+	flex-shrink: 0;
+}
+
+.cover-wrap.empty .cover-img,
+.cover-wrap.empty .cover-glow,
+.cover-wrap.empty .cover-gloss,
+.cover-wrap.empty .cover-shade {
+	display: none;
+}
+
+.cover-glow {
+	position: absolute;
+	inset: -4px;
+	border-radius: 15px;
+	filter: blur(5px);
+	background: linear-gradient(140deg, #8050ff35, transparent 55%, #8050ff18);
+}
+
+.cover-img {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	border-radius: 13px;
+	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+	display: block;
+}
+
+.cover-gloss {
+	position: absolute;
+	inset: 0;
+	border-radius: 13px;
+	pointer-events: none;
+	background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, transparent 50%, rgba(0, 0, 0, 0.25) 100%);
+}
+
+.cover-shade {
+	position: absolute;
+	inset: 0;
+	border-radius: 13px;
+	pointer-events: none;
+	background: linear-gradient(to top, rgba(0, 0, 0, 0.35) 0%, transparent 50%);
+	mix-blend-mode: multiply;
+}
+
+.player-main {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 0;
+}
+
+.track-title {
+	font-size: var(--title-size);
+	color: rgba(255, 255, 255, 0.9);
+	letter-spacing: 0.015em;
+	font-weight: 450;
+	line-height: 1.375;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.track-artist {
+	font-size: var(--artist-size);
+	color: rgba(255, 255, 255, 0.28);
+	margin-top: 3px;
+	letter-spacing: 0.01em;
+	line-height: 1.375;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.progress-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.progress-track {
+	flex: 1;
+	height: var(--progress-h);
+	background: rgba(255, 255, 255, 0.05);
+	border-radius: 999px;
+	position: relative;
+	box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.2);
+}
+
+.progress-fill {
+	height: 100%;
+	width: 0;
+	border-radius: 999px;
+	background: linear-gradient(90deg, #8050ffdd, #8050ff);
+	position: relative;
+	transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-dot {
+	position: absolute;
+	right: -3px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: calc(var(--progress-h) + 2px);
+	height: calc(var(--progress-h) + 2px);
+	min-width: 5px;
+	min-height: 5px;
+	border-radius: 999px;
+	background: #8050ff;
+	opacity: 0.9;
+}
+
+.time-text {
+	flex-shrink: 0;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	color: rgba(255, 255, 255, 0.3);
+	font-variant-numeric: tabular-nums;
+	font-size: var(--time-size);
+	min-width: 50px;
+	text-align: right;
+	line-height: 1;
+	letter-spacing: 0.03em;
+}
+
+/* 换曲动效：时长/延迟对应 framer-motion 的 1s + 0.15/0.25/0.3s */
+.player-card.swap-out .cover-wrap { animation: coverOut 500ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+.player-card.swap-out .track-title { animation: titleOut 500ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+.player-card.swap-out .track-artist { animation: titleOut 500ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+
+.player-card.swap-in .cover-wrap { animation: coverIn 1s cubic-bezier(0.4, 0, 0.2, 1) 150ms both; }
+.player-card.swap-in .track-title { animation: titleIn 1s cubic-bezier(0.4, 0, 0.2, 1) 250ms both; }
+.player-card.swap-in .track-artist { animation: titleIn 1s cubic-bezier(0.4, 0, 0.2, 1) 300ms both; }
+
+@keyframes coverIn {
+	from { opacity: 0; transform: scale(0.92); }
+	to { opacity: 1; transform: scale(1); }
+}
+@keyframes coverOut {
+	from { opacity: 1; transform: scale(1); }
+	to { opacity: 0; transform: scale(0.92); }
+}
+@keyframes titleIn {
+	from { opacity: 0; transform: translateY(10px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+@keyframes titleOut {
+	from { opacity: 1; transform: translateY(0); }
+	to { opacity: 0; transform: translateY(-10px); }
+}
+
+/* ---------------- HUD ---------------- */
+
+.hud {
+	position: fixed;
+	right: 18px;
+	bottom: 18px;
+	z-index: 55;
+	display: flex;
+	gap: 8px;
+}
+
+.hud-btn {
+	appearance: none;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: rgba(12, 12, 18, 0.55);
+	color: rgba(255, 255, 255, 0.62);
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	padding: 8px 14px;
+	border-radius: 999px;
+	cursor: pointer;
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
+	transition: color 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.hud-btn:hover {
+	color: rgba(255, 255, 255, 0.95);
+	border-color: rgba(184, 166, 255, 0.45);
+	background: rgba(24, 20, 40, 0.7);
+}
+
+/* ---------------- 音频菜单 ---------------- */
+
+.audio-menu {
+	position: fixed;
+	right: 18px;
+	bottom: 62px;
+	z-index: 56;
+	width: 320px;
+	padding: 10px;
+	border-radius: 16px;
+	background: rgba(9, 9, 14, 0.82);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+	backdrop-filter: blur(24px) saturate(1.3);
+	-webkit-backdrop-filter: blur(24px) saturate(1.3);
+	opacity: 0;
+	transform: translateY(8px) scale(0.98);
+	pointer-events: none;
+	transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.audio-menu.open {
+	opacity: 1;
+	transform: none;
+	pointer-events: auto;
+}
+
+.audio-menu-head {
+	font-size: 10px;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: rgba(255, 255, 255, 0.38);
+	padding: 4px 8px 8px;
+}
+
+.audio-menu button {
+	display: block;
+	width: 100%;
+	text-align: left;
+	padding: 9px 10px;
+	border-radius: 10px;
+	border: 0;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.8);
+	cursor: pointer;
+	transition: background 140ms ease;
+}
+
+.audio-menu button:hover { background: rgba(255, 255, 255, 0.06); }
+
+.audio-menu button b {
+	display: block;
+	font-size: 12.5px;
+	font-weight: 500;
+	letter-spacing: 0.02em;
+}
+
+.audio-menu button small {
+	display: block;
+	margin-top: 3px;
+	font-size: 10.5px;
+	color: rgba(255, 255, 255, 0.32);
+	line-height: 1.45;
+}
+
+.audio-menu-foot {
+	border-top: 1px solid rgba(255, 255, 255, 0.06);
+	margin-top: 6px;
+	padding: 9px 10px 2px;
+	font-size: 10.5px;
+	color: rgba(255, 255, 255, 0.35);
+}
+
+.audio-menu-foot span { color: rgba(184, 166, 255, 0.9); }
+
+/* ---------------- 参数面板 ---------------- */
+
+.props {
+	position: fixed;
+	left: 14px;
+	top: 14px;
+	bottom: 14px;
+	width: 366px;
+	z-index: 60;
+	display: flex;
+	flex-direction: column;
+	border-radius: 18px;
+	background: rgba(9, 9, 14, 0.8);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	box-shadow: 0 28px 80px rgba(0, 0, 0, 0.6);
+	backdrop-filter: blur(26px) saturate(1.3);
+	-webkit-backdrop-filter: blur(26px) saturate(1.3);
+	transform: translateX(-112%);
+	opacity: 0;
+	pointer-events: none;
+	transition: transform 420ms cubic-bezier(0.4, 0, 0.2, 1), opacity 260ms ease;
+}
+
+.props.open {
+	transform: none;
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.props-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	padding: 18px 18px 12px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.props-head h2 {
+	font-size: 14px;
+	font-weight: 500;
+	color: rgba(255, 255, 255, 0.92);
+	letter-spacing: 0.02em;
+}
+
+.props-head p {
+	margin-top: 4px;
+	font-size: 10px;
+	color: rgba(255, 255, 255, 0.32);
+	letter-spacing: 0.04em;
+}
+
+.icon-btn {
+	appearance: none;
+	border: 0;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.45);
+	font-size: 22px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 4px;
+}
+
+.icon-btn:hover { color: rgba(255, 255, 255, 0.9); }
+
+.props-body {
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 4px 18px 18px;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+.props-body::-webkit-scrollbar { width: 6px; }
+.props-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 3px; }
+
+.prop-sec h3 {
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: rgba(184, 166, 255, 0.72);
+	margin: 20px 0 10px;
+	padding-bottom: 7px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.prop-row { margin-bottom: 12px; }
+
+.prop-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.prop-label {
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.78);
+	line-height: 1.3;
+}
+
+.prop-label em {
+	display: block;
+	font-style: normal;
+	font-size: 9.5px;
+	color: rgba(255, 255, 255, 0.28);
+	letter-spacing: 0.04em;
+	margin-top: 2px;
+}
+
+.prop-val {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 10.5px;
+	color: rgba(184, 166, 255, 0.9);
+	white-space: nowrap;
+}
+
+.prop-row.type-bool .prop-head { min-height: 34px; }
+.prop-row.type-bool .prop-val { display: none; }
+
+input[type="range"] {
+	appearance: none;
+	-webkit-appearance: none;
+	width: 100%;
+	height: 16px;
+	margin-top: 7px;
+	background: transparent;
+	cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+	height: 3px;
+	border-radius: 2px;
+	background: linear-gradient(
+		90deg,
+		rgba(184, 166, 255, 0.9) var(--p, 50%),
+		rgba(255, 255, 255, 0.12) var(--p, 50%)
+	);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: #ddd3ff;
+	margin-top: -4.5px;
+	box-shadow: 0 0 8px rgba(184, 166, 255, 0.5);
+}
+
+input[type="range"]::-moz-range-track {
+	height: 3px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.12);
+}
+
+input[type="range"]::-moz-range-progress {
+	height: 3px;
+	border-radius: 2px;
+	background: rgba(184, 166, 255, 0.9);
+}
+
+input[type="range"]::-moz-range-thumb {
+	width: 12px;
+	height: 12px;
+	border: 0;
+	border-radius: 50%;
+	background: #ddd3ff;
+	box-shadow: 0 0 8px rgba(184, 166, 255, 0.5);
+}
+
+select {
+	width: 100%;
+	margin-top: 7px;
+	height: 30px;
+	padding: 0 9px;
+	border-radius: 8px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: rgba(255, 255, 255, 0.05);
+	color: rgba(255, 255, 255, 0.82);
+	font-size: 11.5px;
+	outline: none;
+	cursor: pointer;
+}
+
+select:focus { border-color: rgba(184, 166, 255, 0.5); }
+select option { background: #14141c; color: #e8e8ef; }
+
+.switch {
+	appearance: none;
+	position: relative;
+	width: 36px;
+	height: 20px;
+	border-radius: 999px;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	background: rgba(255, 255, 255, 0.07);
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: background 180ms ease, border-color 180ms ease;
+}
+
+.switch::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.55);
+	transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1), background 180ms ease;
+}
+
+.switch.on {
+	background: rgba(128, 80, 255, 0.5);
+	border-color: rgba(184, 166, 255, 0.65);
+}
+
+.switch.on::after {
+	transform: translateX(16px);
+	background: #fff;
+}
+
+.props-foot {
+	display: flex;
+	gap: 8px;
+	padding: 12px 18px 16px;
+	border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.props-foot button {
+	flex: 1;
+	appearance: none;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: rgba(255, 255, 255, 0.04);
+	color: rgba(255, 255, 255, 0.62);
+	font-size: 10.5px;
+	padding: 8px 6px;
+	border-radius: 8px;
+	cursor: pointer;
+	transition: background 160ms ease, color 160ms ease;
+}
+
+.props-foot button:hover {
+	background: rgba(184, 166, 255, 0.14);
+	color: rgba(255, 255, 255, 0.92);
+}
+
+/* ---------------- 提示 / 统计 / toast ---------------- */
+
+.hint {
+	position: fixed;
+	left: 50%;
+	bottom: 22px;
+	transform: translateX(-50%);
+	z-index: 52;
+	font-size: 10.5px;
+	letter-spacing: 0.08em;
+	color: rgba(255, 255, 255, 0.3);
+	pointer-events: none;
+	animation: hintFade 9s ease forwards;
+	white-space: nowrap;
+}
+
+@keyframes hintFade {
+	0%, 62% { opacity: 0.9; }
+	100% { opacity: 0; }
+}
+
+.stats {
+	position: fixed;
+	left: 18px;
+	bottom: 18px;
+	z-index: 54;
+	display: none;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 10px;
+	line-height: 1.5;
+	color: rgba(184, 166, 255, 0.8);
+	background: rgba(8, 8, 12, 0.6);
+	border: 1px solid rgba(255, 255, 255, 0.07);
+	border-radius: 8px;
+	padding: 7px 10px;
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	pointer-events: none;
+	max-width: 72vw;
+}
+
+.stats.show { display: block; }
+
+.toast {
+	position: fixed;
+	left: 50%;
+	top: 22px;
+	transform: translate(-50%, -10px);
+	z-index: 80;
+	max-width: min(620px, 80vw);
+	padding: 9px 16px;
+	border-radius: 999px;
+	background: rgba(10, 10, 16, 0.85);
+	border: 1px solid rgba(184, 166, 255, 0.28);
+	color: rgba(255, 255, 255, 0.82);
+	font-size: 11.5px;
+	letter-spacing: 0.02em;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 220ms ease, transform 220ms ease;
+	backdrop-filter: blur(18px);
+	-webkit-backdrop-filter: blur(18px);
+	text-align: center;
+}
+
+.toast.show {
+	opacity: 1;
+	transform: translate(-50%, 0);
+}
+
+@media (max-width: 820px) {
+	.props { width: calc(100vw - 28px); }
+	.player { --pw: 300px !important; --cover: 76px !important; --pad: 14px !important; --gap: 12px !important; }
+	.hint { display: none; }
+}
+
+/* 纯净模式：截图/投屏时隐藏 HUD 与提示 */
+body.clean .hud,
+body.clean .hint,
+body.clean .stats,
+body.clean .toast { display: none !important; }
+
+/* 嵌入模式：只保留场景，播放器卡片/参数/HUD 全部由父页面负责 */
+body.embed .hud,
+body.embed .player,
+body.embed .hint,
+body.embed .toast,
+body.embed .props,
+body.embed .audio-menu,
+body.embed .stats {
+	display: none !important;
+}
+
+body.embed {
+	cursor: default;
+}

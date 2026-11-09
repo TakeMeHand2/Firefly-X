@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>音域回响 · Sonic Topography</title>
+	<link rel="icon" href="data:," />
+	<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+	<canvas id="gl" aria-label="音域回响音频可视化"></canvas>
+
+	<!-- 播放器：与 Wallpaper Engine Media Integration 面板同构 -->
+	<div id="player" class="player" aria-hidden="true">
+		<div id="playerCard" class="player-card">
+			<div class="player-row">
+				<div id="coverWrap" class="cover-wrap empty">
+					<div id="coverGlow" class="cover-glow"></div>
+					<img id="cover" class="cover-img" alt="" />
+					<div class="cover-gloss"></div>
+					<div class="cover-shade"></div>
+				</div>
+				<div class="player-main">
+					<div class="title-wrap">
+						<div id="trackTitle" class="track-title">--</div>
+						<div id="trackArtist" class="track-artist">--</div>
+					</div>
+					<div id="progressRow" class="progress-row" style="display:none">
+						<div class="progress-track">
+							<div id="progressFill" class="progress-fill">
+								<span class="progress-dot"></span>
+							</div>
+						</div>
+						<div id="timeText" class="time-text">0:00/0:00</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div id="hint" class="hint">点击空白处触发流星 · P 参数 · A 音频源 · H 统计</div>
+	<div id="toast" class="toast" role="status"></div>
+	<div id="stats" class="stats"></div>
+
+	<div class="hud">
+		<button id="btnAudio" class="hud-btn" type="button" title="音频源 (A)">音频</button>
+		<button id="btnProps" class="hud-btn" type="button" title="参数 (P)">参数</button>
+	</div>
+
+	<div id="audioMenu" class="audio-menu" role="menu">
+		<div class="audio-menu-head">音频源 / Audio Source</div>
+		<button type="button" data-source="system" role="menuitem"><b>系统音频</b><small>共享屏幕时勾选「分享音频」，最接近 WE 回环</small></button>
+		<button type="button" data-source="mic" role="menuitem"><b>麦克风</b><small>环境声 / 现场演奏</small></button>
+		<button type="button" data-source="builtin" role="menuitem"><b>内置示例曲</b><small>程序化底鼓/贝斯/铺底/踩镲，24 秒</small></button>
+		<button type="button" data-source="file" role="menuitem"><b>本地音频文件…</b><small>读取 ID3 标题、艺术家与专辑封面</small></button>
+		<button type="button" data-source="demo" role="menuitem"><b>演示信号</b><small>128 BIN 合成频谱，128 BPM 四踩</small></button>
+		<button type="button" data-source="silence" role="menuitem"><b>静音</b><small>约 1 秒后进入空闲波浪</small></button>
+		<div class="audio-menu-foot">当前：<span id="sourceLabel">—</span></div>
+	</div>
+
+	<!-- 参数面板：Wallpaper Engine 属性页的浏览器等价物 -->
+	<aside id="props" class="props" aria-hidden="true">
+		<header class="props-head">
+			<div>
+				<h2>音域回响 · 参数</h2>
+				<p>Sonic Topography · Wallpaper Engine 属性对齐</p>
+			</div>
+			<button id="btnCloseProps" class="icon-btn" type="button" aria-label="关闭">×</button>
+		</header>
+		<div id="propsBody" class="props-body"></div>
+		<footer class="props-foot">
+			<button id="btnReset" type="button">恢复默认</button>
+			<button id="btnExport" type="button">导出 WE 配置</button>
+			<button id="btnImport" type="button">导入</button>
+		</footer>
+	</aside>
+
+	<input id="fileInput" type="file" accept="audio/*" hidden />
+	<input id="cfgInput" type="file" accept="application/json,.json" hidden />
+
+	<!-- Wallpaper Engine Media Integration：与本体 index.html 的回调结构一致。
+	     在浏览器里这些宿主函数不存在，脚本静默跳过；在 WE 中则提供曲名/封面/进度。 -->
+	<script>
+		window.__mediaState = {
+			title: '', artist: '', thumbnail: '', primaryColor: '', textColor: '',
+			isPlaying: false, position: 0, duration: 0, _callbacks: []
+		};
+		window.__notifyMediaChange = function () {
+			window.__mediaState._callbacks.forEach(function (cb) {
+				cb({
+					title: window.__mediaState.title,
+					artist: window.__mediaState.artist,
+					thumbnail: window.__mediaState.thumbnail,
+					primaryColor: window.__mediaState.primaryColor,
+					textColor: window.__mediaState.textColor,
+					isPlaying: window.__mediaState.isPlaying,
+					position: window.__mediaState.position,
+					duration: window.__mediaState.duration
+				});
+			});
+		};
+		if (window.wallpaperRegisterMediaPropertiesListener) {
+			window.wallpaperRegisterMediaPropertiesListener(function (props) {
+				window.__mediaState.title = props.title || '';
+				window.__mediaState.artist = props.artist || '';
+				window.__mediaState.position = 0;
+				window.__mediaState.duration = 0;
+				window.__notifyMediaChange();
+			});
+		}
+		if (window.wallpaperRegisterMediaThumbnailListener) {
+			window.wallpaperRegisterMediaThumbnailListener(function (thumb) {
+				window.__mediaState.thumbnail = thumb.thumbnail || '';
+				window.__mediaState.primaryColor = thumb.primaryColor || '';
+				window.__mediaState.textColor = thumb.textColor || '';
+				window.__notifyMediaChange();
+			});
+		}
+		if (window.wallpaperRegisterMediaPlaybackListener) {
+			window.wallpaperRegisterMediaPlaybackListener(function (pb) {
+				var PLAYING = (window.wallpaperMediaIntegration && window.wallpaperMediaIntegration.PLAYBACK_PLAYING) || 0;
+				window.__mediaState.isPlaying = pb.state === PLAYING;
+				window.__notifyMediaChange();
+			});
+		}
+		if (window.wallpaperRegisterMediaTimelineListener) {
+			window.wallpaperRegisterMediaTimelineListener(function (tl) {
+				window.__mediaState.position = tl.position || 0;
+				window.__mediaState.duration = tl.duration || 0;
+				window.__notifyMediaChange();
+			});
+		}
+	</script>
+
+	<script type="module" src="./src/main.js"></script>
+</body>
+</html>

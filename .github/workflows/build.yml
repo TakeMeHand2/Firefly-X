@@ -64,4 +64,5 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run Astro Build
-        run: pnpm astro build
+        # 镜像由 wallpaper/ 生成，CI 直接用 astro build 时需先同步
+        run: node scripts/sync-sonic-lab.mjs && pnpm astro build

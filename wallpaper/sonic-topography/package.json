@@ -1,0 +1,12 @@
+{
+	"name": "sonic-topography",
+	"private": true,
+	"version": "1.0.0",
+	"type": "module",
+	"description": "《音域回响 / Sonic Topography》浏览器端一比一复刻：零依赖 WebGL2",
+	"scripts": {
+		"dev": "node tools/serve.mjs 5178",
+		"start": "node tools/serve.mjs 5178",
+		"capture": "node tools/capture.mjs --out out/cap"
+	}
+}

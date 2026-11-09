@@ -20,6 +20,12 @@
 // 4. 不透明渲染 + 淡出到背景色，而不是 alpha 淡出——密集几何叠 alpha 会
 //    在深度写入上翻车，颜色插值等价且没有排序问题。
 //
+// 生产全屏层现在接的是 wallpaper/sonic-topography 的同源镜像：iframe 只渲染
+// 参考场景（逐字着色器 + 参考相机/音频下游/涟漪流星），128 band 由本组件按
+// 30Hz 从 MusicManager 的 256 段频谱还原后桥接。唱片卡、传输控件、开合与
+// 无障碍仍是本组件自己的外壳。旧场景保留给 ?mvz=1 / ?stim= 测量台，以及
+// Sonic 镜像加载失败时的降级路径。
+//
 // DOM 由脚本搬到 <body>，Swup 换页后与音频一起存活。样式必须 is:global，
 // 全部走 .mvz-* 命名空间。
 import I18nKey from "@/i18n/i18nKey";
@@ -46,8 +52,11 @@ const progressLabel = i18n(I18nKey.musicProgress);
   控件压到最底一行。卡片的横向比例（约 2.4:1）由封面直径驱动，而不是写死
   高度——这样标题换行、字号缩放都不会把比例撑破。
 -->
-<div class="mvz" data-mvz-root aria-hidden="true" inert role="dialog" aria-modal="true" aria-label={visualizerLabel} style={`--mvz-accent:${fsAccent};--mvz-glass:${fsGlass};`}>
+<div class="mvz" data-mvz-root aria-hidden="true" inert role="dialog" aria-modal="true" tabindex="-1" aria-label={visualizerLabel} style={`--mvz-accent:${fsAccent};--mvz-glass:${fsGlass};`}>
     <canvas class="mvz-gl" data-mvz="gl" aria-hidden="true"></canvas>
+    <!-- 参考场景：独立同源渲染器（WebGL2），由父层以 30Hz 投喂 128 band。
+         唱片卡/传输控件仍是博客自己的外壳，不替换。 -->
+    <iframe class="mvz-sonic" data-mvz="sonic" title="音域回响场景" aria-hidden="true" tabindex="-1"></iframe>
     <div class="mvz-veil" aria-hidden="true"></div>
 
     <div class="mvz-stage">
@@ -146,6 +155,7 @@ const progressLabel = i18n(I18nKey.musicProgress);
     var ui = {
         root: el,
         gl: q('gl'),
+        sonic: q('sonic'),
         card: q('card'),
         meta: q('meta'),
         disc: q('disc'),
@@ -1939,6 +1949,10 @@ const progressLabel = i18n(I18nKey.musicProgress);
     // ?live=1：保留 mvz=1 的自动开层，但把频谱换回真实分析器——
     // 这是唯一能验证「整条真实链路」的通道：浏览器解码 → 分析器 → 频段 → 像素。
     var LIVE = /[?&]live=1\b/.test(QS);
+    // 参考场景（Sonic Topography）在生产全屏层启用；mvz/stim/live/rec 等
+    // 测量模式仍走原场景，避免把测量台的已知输入链路换掉。
+    var SONIC_PARAM = /[?&]sonic=([01])\b/.exec(QS);
+    var SONIC = SONIC_PARAM ? SONIC_PARAM[1] === '1' : (!DEBUG_SPEC && !STIM && !LIVE && !REC);
     if (LIVE) DEBUG_SPEC = false;
 
     // 频谱形态参考真实流行乐：低频厚、2–3kHz 有一个共振峰、高频衰减但带爆发。
@@ -3448,6 +3462,131 @@ const progressLabel = i18n(I18nKey.musicProgress);
         rafId = 0;
     }
 
+    // ── 参考场景桥 ───────────────────────────────────────────
+    // 独立同源渲染器只负责场景；卡片/控件仍在本组件。父层以 30Hz 把
+    // MusicManager 的 256 段频谱还原成 64 段 × 2（WE 的 128 布局）后投喂。
+    var sonicTimer = 0;
+    var sonicReady = false;
+    var sonicFallbackTimer = 0;
+    var sonicBands = new Float32Array(128);
+
+    function sonicSrc() {
+        // 绝对站点根路径：可视化层在任意文章页都能打开，不能按当前文档解析。
+        var u = new URL('/lab/sonic-topography/index.html', location.origin);
+        u.searchParams.set('embed', '1');
+        u.searchParams.set('ui', '0');
+        u.searchParams.set('stim', 'bridge');
+        u.searchParams.set('theme', 'nocturnal');
+        u.searchParams.set('grid', '160');
+        return u.href;
+    }
+
+    function postSonic(msg) {
+        if (!ui.sonic || !ui.sonic.contentWindow) return;
+        try { ui.sonic.contentWindow.postMessage(msg, '*'); } catch (e) {}
+    }
+
+    function fallbackToLegacy() {
+        if (!SONIC || !isOpen) return;
+        SONIC = false;
+        stopSonicBridge();
+        postSonic({ type: 'active', value: false });
+        el.classList.remove('is-sonic');
+        if (!gl) initGL();
+        el.classList.toggle('has-gl', !!gl);
+        resize();
+        if (!started) start();
+    }
+
+    function loadSonic() {
+        if (!ui.sonic) return;
+        if (!ui.sonic.src) {
+            ui.sonic.src = sonicSrc();
+            ui.sonic.addEventListener('load', function () {
+                postSonic({ type: 'active', value: isOpen });
+            });
+            ui.sonic.addEventListener('error', fallbackToLegacy);
+            // 镜像缺失/被 CSP 拦截时不能留一块黑屏：7s 内没有 ready 就回旧场景
+            sonicFallbackTimer = setTimeout(fallbackToLegacy, 7000);
+        } else if (!sonicReady) {
+            if (sonicFallbackTimer) clearTimeout(sonicFallbackTimer);
+            sonicFallbackTimer = setTimeout(fallbackToLegacy, 7000);
+        }
+        postSonic({ type: 'active', value: true });
+    }
+
+    function buildSonicBands(out) {
+        var n = spec.length || 256;
+        var FMIN = 40, FMAX = 16000, LMIN = 35;
+        var span = Math.log(FMAX / FMIN);
+        for (var b = 0; b < 64; b++) {
+            var f0 = LMIN * Math.pow(FMAX / LMIN, b / 64);
+            var f1 = LMIN * Math.pow(FMAX / LMIN, (b + 1) / 64);
+            var i0 = Math.log(Math.max(f0, FMIN) / FMIN) / span * (n - 1);
+            var i1 = Math.log(Math.min(f1, FMAX) / FMIN) / span * (n - 1);
+            if (i1 <= i0) i1 = i0 + 0.001;
+            var k0 = Math.floor(i0), k1 = Math.ceil(i1);
+            var sum = 0, tilt = 0, wsum = 0;
+            for (var k = k0; k < k1; k++) {
+                var lo = Math.max(i0, k), hi = Math.min(i1, k + 1);
+                if (hi <= lo) continue;
+                var w = hi - lo;
+                sum += spec[k] * w;
+                tilt += (1 + Math.pow(k / n, 1.4) * 2.6) * w;
+                wsum += w;
+            }
+            var v = wsum > 0 && tilt > 0 ? sum / tilt : 0;
+            // 反演 MusicManager.shapeBin：pow(norm,0.82)*1.15 的显示补偿
+            // 不能带进参考场景，否则同一段音乐会比 WE 投喂时更敏感。
+            v = Math.min(1, Math.max(0, v / 1.15));
+            v = Math.pow(v, 1 / 0.82);
+            out[b] = v;
+            out[64 + b] = v;
+        }
+    }
+
+    function pushSonicBands() {
+        if (!SONIC || !isOpen) return;
+        var st = mgr && mgr.getState ? mgr.getState() : null;
+        if (!st || (!st.isPlaying && !DEBUG_SPEC)) sonicBands.fill(0);
+        else buildSonicBands(sonicBands);
+        postSonic({ type: 'bands', data: Array.prototype.slice.call(sonicBands) });
+    }
+
+    function startSonicBridge() {
+        stopSonicBridge();
+        pushSonicBands();
+        sonicTimer = setInterval(pushSonicBands, 33);
+    }
+
+    function stopSonicBridge() {
+        if (sonicTimer) clearInterval(sonicTimer);
+        sonicTimer = 0;
+    }
+
+    window.addEventListener('message', function (ev) {
+        if (!ui.sonic || ev.source !== ui.sonic.contentWindow) return;
+        var d = ev.data;
+        if (!d || typeof d !== 'object') return;
+        if (d.type === 'poke') {
+            pokeIdle();
+            // iframe 抢走焦点后，Space/方向键/Esc 会留在子文档；把焦点拉回对话框。
+            try { el.focus({ preventScroll: true }); } catch (e) {}
+        } else if (d.type === 'pointer') {
+            queueSpecular({ clientX: d.x, clientY: d.y });
+            pokeIdle();
+        } else if (d.type === 'key') {
+            document.dispatchEvent(new KeyboardEvent('keydown', {
+                key: d.key, code: d.code, shiftKey: !!d.shiftKey, bubbles: true
+            }));
+        } else if (d.type === 'ready') {
+            sonicReady = true;
+            if (sonicFallbackTimer) { clearTimeout(sonicFallbackTimer); sonicFallbackTimer = 0; }
+            postSonic({ type: 'active', value: isOpen });
+            if (isOpen && SONIC) startSonicBridge();
+        }
+    });
+
     // ── 开合 ─────────────────────────────────────────────────
     function open() {
         if (isOpen) return;
@@ -3466,13 +3605,19 @@ const progressLabel = i18n(I18nKey.musicProgress);
         document.body.style.overflow = 'hidden';
         // aria-modal 必须配焦点转移，否则读屏与键盘用户仍留在背后的面板里
         lastFocus = document.activeElement;
-        if (!gl) initGL();
-        // 降级判据交给 CSS：canvas 元素始终在 DOM 里，失败时它只是一块
-        // 透明的空画布，靠元素存在与否分辨不出来。没有这一笔，用户看到的
-        // 是一个纯黑的对话框加一张功能完好的卡片——像是渲染挂了。
-        el.classList.toggle('has-gl', !!gl);
-        resize();
-        initRec();
+        if (SONIC) {
+            el.classList.add('is-sonic', 'has-gl');
+            loadSonic();
+            startSonicBridge();
+        } else {
+            if (!gl) initGL();
+            // 降级判据交给 CSS：canvas 元素始终在 DOM 里，失败时它只是一块
+            // 透明的空画布，靠元素存在与否分辨不出来。没有这一笔，用户看到的
+            // 是一个纯黑的对话框加一张功能完好的卡片——像是渲染挂了。
+            el.classList.toggle('has-gl', !!gl);
+            resize();
+            initRec();
+        }
         syncMeta();
         if (SEEK >= 0) {
             elapsed = SEEK;
@@ -3499,6 +3644,8 @@ const progressLabel = i18n(I18nKey.musicProgress);
         if (!isOpen) return;
         isOpen = false;
         stop();
+        stopSonicBridge();
+        postSonic({ type: 'active', value: false });
         el.classList.remove('is-open', 'is-idle');
         el.setAttribute('aria-hidden', 'true');
         el.setAttribute('inert', '');
@@ -3512,6 +3659,14 @@ const progressLabel = i18n(I18nKey.musicProgress);
 
     function refresh() {
         if (!isOpen) return;
+        if (SONIC) {
+            el.classList.add('is-sonic', 'has-gl');
+            loadSonic();
+            startSonicBridge();
+            syncMeta();
+            if (!started) start();
+            return;
+        }
         if (!gl) initGL();
         el.classList.toggle('has-gl', !!gl);
         resize();

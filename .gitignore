@@ -56,6 +56,10 @@ package/
 # 构建产物临时备份（构建验证时产生）
 dist.prev/
 
+# 博客全屏层的参考场景镜像：由 scripts/sync-sonic-lab.mjs 从 wallpaper/ 生成，
+# 每次 dev/build 前重建，不进版本控制（避免与源目录双份漂移）
+public/lab/sonic-topography/
+
 # 本地测量/调试产物（mvz-lab 逐帧截图与数据，可由 capture.mjs 重新生成）
 tools/mvz-lab/out/
 

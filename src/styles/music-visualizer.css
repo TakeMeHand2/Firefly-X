@@ -71,6 +71,33 @@
     height: 100%;
     display: block;
     touch-action: none;
+    z-index: 0;
+}
+
+/* 参考场景层：与 .mvz 同尺寸的同源 iframe。卡片与 veil 仍在它之上；
+   嵌入页内部已隐藏自己的播放器/参数/HUD，只输出场景。 */
+.mvz-sonic {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    z-index: 0;
+    background: #010206;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+/* 必须是 is-open + is-sonic：visibility/pointer-events 会覆盖父级的隐藏，
+   只写 .is-sonic 会让关闭后的 iframe 继续拦截整页点击。 */
+.mvz.is-open.is-sonic .mvz-sonic {
+    visibility: visible;
+    pointer-events: auto;
+}
+
+/* Sonic 模式下旧场景不再初始化 WebGL，画布彻底让位 */
+.mvz.is-sonic .mvz-gl {
+    display: none;
 }
 
 /* 没有 WebGL 时的降级底图：不放任何 fallback 提示文字，也不假装有地形，
@@ -92,6 +119,7 @@
 .mvz-veil {
     position: absolute;
     inset: 0;
+    z-index: 1;
     pointer-events: none;
     background:
         radial-gradient(34rem 24rem at 15% 50%,
@@ -111,6 +139,7 @@
 .mvz-stage {
     position: absolute;
     inset: 0;
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: flex-start;

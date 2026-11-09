@@ -1,0 +1,511 @@
+{
+  "approved": true,
+  "audio": {
+    "enabled": true
+  },
+  "contentrating": "Everyone",
+  "description": "音域回响 / Sonic Topography 的浏览器端复刻：160×160 实例化柱阵、实时 FFT 音频响应、涟漪、流星与粒子、15 套主题、媒体信息面板。支持 Wallpaper Engine 宿主音频与媒体回调，也可独立在浏览器运行。",
+  "file": "index.html",
+  "general": {
+    "properties": {
+      "sep_appearance": {
+        "type": "text",
+        "value": "",
+        "text": "===外观 / Appearance===",
+        "order": 100,
+        "index": 0
+      },
+      "theme": {
+        "text": "颜色主题 / Color Theme",
+        "order": 101,
+        "index": 1,
+        "type": "combo",
+        "value": "nocturnal",
+        "options": [
+          {
+            "label": "自动轮询 / Auto Cycle",
+            "value": "cycle"
+          },
+          {
+            "label": "霁紫 / Violet",
+            "value": "nocturnal"
+          },
+          {
+            "label": "沧蓝 / Deep Blue",
+            "value": "ocean-deep"
+          },
+          {
+            "label": "冰蓝 / Ice Blue",
+            "value": "arctic-aurora"
+          },
+          {
+            "label": "碧翠 / Emerald",
+            "value": "cyber-forest"
+          },
+          {
+            "label": "流金 / Gold",
+            "value": "golden-hour"
+          },
+          {
+            "label": "余烬 / Ember",
+            "value": "ember-fire"
+          },
+          {
+            "label": "赤焰 / Crimson",
+            "value": "crimson-sunset"
+          },
+          {
+            "label": "霞粉 / Coral",
+            "value": "coral-mirage"
+          },
+          {
+            "label": "幻紫 / Neon",
+            "value": "neon-tokyo"
+          },
+          {
+            "label": "水墨 / Ink",
+            "value": "minimal-monochrome"
+          },
+          {
+            "label": "幽青 / Teal",
+            "value": "teal-depth"
+          },
+          {
+            "label": "薰衣草 / Lavender",
+            "value": "lavender-dream"
+          },
+          {
+            "label": "樱 / Cherry Blossom",
+            "value": "cherry-blossom"
+          },
+          {
+            "label": "锻铜 / Copper",
+            "value": "copper-forge"
+          },
+          {
+            "label": "薄荷 / Mint",
+            "value": "mint-fresh"
+          }
+        ]
+      },
+      "themeCycleInterval": {
+        "type": "slider",
+        "value": 60,
+        "min": 10,
+        "max": 300,
+        "step": 10,
+        "text": "轮询间隔 / Cycle Interval (s)",
+        "order": 102,
+        "index": 2
+      },
+      "lightMode": {
+        "text": "浅色模式 / Light Mode",
+        "order": 103,
+        "index": 3,
+        "type": "bool",
+        "value": false
+      },
+      "peakColorEnabled": {
+        "text": "启用强调色 / Peak Color",
+        "order": 104,
+        "index": 4,
+        "type": "bool",
+        "value": true
+      },
+      "peakColorIntensity": {
+        "text": "强调色强度 / Peak Color Intensity",
+        "order": 105,
+        "index": 5,
+        "type": "slider",
+        "value": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      "gridSize": {
+        "text": "渲染精度 / Render Resolution",
+        "order": 106,
+        "index": 6,
+        "type": "combo",
+        "value": 160,
+        "options": [
+          {
+            "label": "120x120",
+            "value": 120
+          },
+          {
+            "label": "160x160",
+            "value": 160
+          },
+          {
+            "label": "320x320",
+            "value": 320
+          },
+          {
+            "label": "640x640",
+            "value": 640
+          },
+          {
+            "label": "1080x1080",
+            "value": 1080
+          },
+          {
+            "label": "4096x4096",
+            "value": 4096
+          }
+        ]
+      },
+      "sep_audio": {
+        "type": "text",
+        "value": "",
+        "text": "===音频响应 / Audio Response===",
+        "order": 107,
+        "index": 7
+      },
+      "responseRange": {
+        "text": "响应范围 / Response Range",
+        "order": 108,
+        "index": 8,
+        "type": "slider",
+        "value": 1,
+        "min": 0.3,
+        "max": 2,
+        "step": 0.1
+      },
+      "centralEnabled": {
+        "text": "中心隆起 / Central Rise",
+        "order": 109,
+        "index": 9,
+        "type": "bool",
+        "value": true
+      },
+      "centralIntensity": {
+        "text": "中心隆起强度 / Central Rise Intensity",
+        "order": 110,
+        "index": 10,
+        "type": "slider",
+        "value": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      "ringEnabled": {
+        "text": "中部环形 / Mid Ring",
+        "order": 111,
+        "index": 11,
+        "type": "bool",
+        "value": true
+      },
+      "ringIntensity": {
+        "text": "中部环形强度 / Mid Ring Intensity",
+        "order": 112,
+        "index": 12,
+        "type": "slider",
+        "value": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      "flowEnabled": {
+        "text": "全域流动 / Global Flow",
+        "order": 113,
+        "index": 13,
+        "type": "bool",
+        "value": true
+      },
+      "flowIntensity": {
+        "text": "全域流动强度 / Global Flow Intensity",
+        "order": 114,
+        "index": 14,
+        "type": "slider",
+        "value": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      "riverEnabled": {
+        "text": "河流对角线 / River Flow",
+        "order": 115,
+        "index": 15,
+        "type": "bool",
+        "value": true
+      },
+      "riverIntensity": {
+        "text": "河流对角线强度 / River Flow Intensity",
+        "order": 116,
+        "index": 16,
+        "type": "slider",
+        "value": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      "spikeEnabled": {
+        "text": "高频尖刺 / High Spikes",
+        "order": 117,
+        "index": 17,
+        "type": "bool",
+        "value": true
+      },
+      "spikeIntensity": {
+        "text": "高频尖刺强度 / High Spikes Intensity",
+        "order": 118,
+        "index": 18,
+        "type": "slider",
+        "value": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      "sep_effects": {
+        "type": "text",
+        "value": "",
+        "text": "===效果 / Effects===",
+        "order": 119,
+        "index": 19
+      },
+      "pulseEnabled": {
+        "text": "启用波纹 / Enable Ripple",
+        "order": 120,
+        "index": 20,
+        "type": "bool",
+        "value": true
+      },
+      "pulseIntensity": {
+        "text": "波纹强度 / Ripple Intensity",
+        "order": 121,
+        "index": 21,
+        "type": "slider",
+        "value": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      "pulseSensitivity": {
+        "text": "波纹灵敏度 / Ripple Sensitivity",
+        "order": 122,
+        "index": 22,
+        "type": "slider",
+        "value": 0.2,
+        "min": 0.05,
+        "max": 0.5,
+        "step": 0.01
+      },
+      "pulseCooldown": {
+        "text": "波纹冷却 / Ripple Cooldown",
+        "order": 123,
+        "index": 23,
+        "type": "slider",
+        "value": 0,
+        "min": 0,
+        "max": 200,
+        "step": 5
+      },
+      "meteorEnabled": {
+        "text": "启用流星 / Enable Meteor",
+        "order": 124,
+        "index": 24,
+        "type": "bool",
+        "value": true
+      },
+      "meteorIntensity": {
+        "text": "流星强度 / Meteor Intensity",
+        "order": 125,
+        "index": 25,
+        "type": "slider",
+        "value": 1,
+        "min": 0,
+        "max": 2,
+        "step": 0.1
+      },
+      "meteorSensitivity": {
+        "text": "流星灵敏度 / Meteor Sensitivity",
+        "order": 126,
+        "index": 26,
+        "type": "slider",
+        "value": 0.35,
+        "min": 0.1,
+        "max": 0.8,
+        "step": 0.05
+      },
+      "meteorCooldown": {
+        "text": "流星冷却 / Meteor Cooldown",
+        "order": 127,
+        "index": 27,
+        "type": "slider",
+        "value": 60,
+        "min": 0,
+        "max": 400,
+        "step": 10
+      },
+      "meteorClickEnabled": {
+        "text": "点击触发流星 / Click Meteor",
+        "order": 128,
+        "index": 28,
+        "type": "bool",
+        "value": true
+      },
+      "idleWaveEnabled": {
+        "text": "启用空闲波浪 / Idle Wave",
+        "order": 129,
+        "index": 29,
+        "type": "bool",
+        "value": true
+      },
+      "idleWaveDebounce": {
+        "text": "空闲波浪防抖 / Idle Debounce",
+        "order": 130,
+        "index": 30,
+        "type": "slider",
+        "value": 1,
+        "min": 0.5,
+        "max": 5,
+        "step": 0.5
+      },
+      "idleWaveFadeDuration": {
+        "text": "空闲波浪过渡 / Idle Fade",
+        "order": 131,
+        "index": 31,
+        "type": "slider",
+        "value": 1,
+        "min": 0.5,
+        "max": 5,
+        "step": 0.5
+      },
+      "sep_camera": {
+        "type": "text",
+        "value": "",
+        "text": "===视角 / Camera===",
+        "order": 132,
+        "index": 32
+      },
+      "cameraDistance": {
+        "text": "视角距离 / Camera Distance",
+        "order": 133,
+        "index": 33,
+        "type": "slider",
+        "value": 85,
+        "min": 20,
+        "max": 100,
+        "step": 5
+      },
+      "cameraAngleX": {
+        "text": "水平角度 / Horizontal Angle",
+        "order": 134,
+        "index": 34,
+        "type": "slider",
+        "value": 120,
+        "min": 0,
+        "max": 360,
+        "step": 5
+      },
+      "cameraAngleY": {
+        "text": "垂直仰角 / Vertical Angle",
+        "order": 135,
+        "index": 35,
+        "type": "slider",
+        "value": 25,
+        "min": 10,
+        "max": 70,
+        "step": 5
+      },
+      "autoRotateEnabled": {
+        "text": "自动旋转 / Auto Rotate",
+        "order": 136,
+        "index": 36,
+        "type": "bool",
+        "value": false
+      },
+      "autoRotateSpeed": {
+        "text": "旋转速度 / Rotate Speed",
+        "order": 137,
+        "index": 37,
+        "type": "slider",
+        "value": 10,
+        "min": 1,
+        "max": 60,
+        "step": 1
+      },
+      "sep_player": {
+        "type": "text",
+        "value": "",
+        "text": "===播放器 / Player===",
+        "order": 138,
+        "index": 38
+      },
+      "showPlayerController": {
+        "text": "显示播放器控制器 / Show Player",
+        "order": 139,
+        "index": 39,
+        "type": "bool",
+        "value": true
+      },
+      "showAlbumCover": {
+        "text": "显示专辑封面 / Show Album Cover",
+        "order": 140,
+        "index": 40,
+        "type": "bool",
+        "value": true
+      },
+      "controllerSize": {
+        "text": "控制器尺寸 / Controller Size",
+        "order": 141,
+        "index": 41,
+        "type": "combo",
+        "value": "large",
+        "options": [
+          {
+            "label": "小 / Small",
+            "value": "small"
+          },
+          {
+            "label": "中 / Medium",
+            "value": "medium"
+          },
+          {
+            "label": "大 / Large",
+            "value": "large"
+          }
+        ]
+      },
+      "controllerX": {
+        "text": "控制器水平位置 / Controller X",
+        "order": 142,
+        "index": 42,
+        "type": "slider",
+        "value": 2,
+        "min": 0,
+        "max": 80,
+        "step": 1
+      },
+      "controllerY": {
+        "text": "控制器垂直位置 / Controller Y",
+        "order": 143,
+        "index": 43,
+        "type": "slider",
+        "value": 3,
+        "min": 0,
+        "max": 90,
+        "step": 1
+      },
+      "schemecolor": {
+        "type": "color",
+        "value": "0.3333333333333333 0.0196078431372549 0.3333333333333333",
+        "text": "ui_browse_properties_scheme_color",
+        "order": 0
+      }
+    },
+    "supportsaudioprocessing": true
+  },
+  "name": "Sonic Topography Replica",
+  "preview": "preview.jpg",
+  "ratingsex": "none",
+  "ratingviolence": "none",
+  "tags": [
+    "Sci-Fi"
+  ],
+  "title": "音域回响 · Sonic Topography",
+  "type": "web",
+  "version": 1,
+  "visibility": "private"
+}
