@@ -44,8 +44,7 @@ export const musicPlayerConfig: MusicPlayerConfig = {
 		// 因此这里拆成 api（元数据）+ audioApi（音频）两个源。
 		api: "https://api.injahow.cn/meting/?server=:server&type=:type&id=:id",
 		// 音频直链接口：loadTrack() 会用它生成每首歌的首选地址并排到队首
-		audioApi:
-			"https://api.moeyao.cn/meting/?server=:server&type=:type&id=:id",
+		audioApi: "https://api.moeyao.cn/meting/?server=:server&type=:type&id=:id",
 		// 音乐平台：netease=网易云音乐, tencent=QQ音乐, kugou=酷狗音乐, xiami=虾米音乐, baidu=百度音乐
 		server: "tencent",
 		// 类型：song=单曲, playlist=歌单, album=专辑, search=搜索, artist=艺术家

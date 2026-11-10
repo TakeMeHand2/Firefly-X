@@ -160,4 +160,3 @@ export function formatTimezoneOffset(
 		.replace(/([+-])0(\d)/, "$1$2")
 		.replace(":00", "");
 }
-
