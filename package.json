@@ -22,7 +22,8 @@
     "preinstall": "npx only-allow pnpm",
     "lqips": "npx tsx scripts/generate-lqips.ts",
     "github-cards": "npx tsx scripts/generate-github-card-data.ts",
-    "sync:sonic": "node scripts/sync-sonic-lab.mjs"
+    "sync:sonic": "node scripts/sync-sonic-lab.mjs",
+    "comments": "pnpm --dir services/twikoo start"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.12",
