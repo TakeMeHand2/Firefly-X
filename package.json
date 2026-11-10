@@ -22,8 +22,7 @@
     "preinstall": "npx only-allow pnpm",
     "lqips": "npx tsx scripts/generate-lqips.ts",
     "github-cards": "npx tsx scripts/generate-github-card-data.ts",
-    "sync:sonic": "node scripts/sync-sonic-lab.mjs",
-    "comments": "pnpm --dir services/twikoo start"
+    "sync:sonic": "node scripts/sync-sonic-lab.mjs"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.12",
@@ -89,8 +88,7 @@
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "unist-util-visit": "^5.1.0",
-    "wrangler": "^4.147.0",
-    "@twikoojs/edgeone-makers": "2.0.17"
+    "wrangler": "^4.147.0"
   },
   "devDependencies": {
     "@astrojs/ts-plugin": "^1.10.12",

@@ -1,28 +1,24 @@
 import type { CommentConfig } from "../types/commentConfig";
 
 export const commentConfig: CommentConfig = {
-// 评论系统类型: none, twikoo, waline, giscus, disqus, artalk，默认为none，即不启用评论系统
-type: "twikoo",
+	// 评论系统类型: none, twikoo, waline, giscus, disqus, artalk，默认为none，即不启用评论系统
+	type: "none",
 
-//twikoo评论系统配置
-twikoo: {
-	// Twikoo 后端服务地址
-	// 生产：EdgeOne Pages 同项目云函数 cloud-functions/api.js（Blob KV 持久化）
-	// 本地：http://127.0.0.1:8080（services/twikoo）
-	envId: "https://firefly-x-ivypesrv.edgeone.cool/twikoo",
-	// 设置 Twikoo 评论系统语言
-	lang: "zh-CN",
-	// 是否启用文章访问量统计功能
-	visitorCount: true,
-	// Twikoo JS 文件地址，支持 CDN 链接
-	// 版本需与服务端 @twikoojs/common 对齐，否则会触发版本校验失败
-	// 中国推荐1: https://registry.npmmirror.com/twikoo/2.0.17/files/dist/twikoo.min.js
-	// 中国推荐2: https://s4.zstatic.net/npm/twikoo@2.0.17/dist/twikoo.min.js
-	// 国际推荐: https://cdn.jsdelivr.net/npm/twikoo@2.0.17/dist/twikoo.min.js
-	jsUrl: "https://registry.npmmirror.com/twikoo/2.0.17/files/dist/twikoo.min.js",
-	// Twikoo 自定义 CSS 文件地址，为空则不加载
-	cssUrl: "/assets/css/twikoo-custom.css",
-},
+	//twikoo评论系统配置
+	twikoo: {
+		envId: "https://twikoo.vercel.app",
+		// 设置 Twikoo 评论系统语言
+		lang: "zh-CN",
+		// 是否启用文章访问量统计功能
+		visitorCount: true,
+		// Twikoo JS 文件地址，支持 CDN 链接
+		// 中国推荐1: https://registry.npmmirror.com/twikoo/1.7.14/files/dist/twikoo.min.js
+		// 中国推荐2: https://s4.zstatic.net/npm/twikoo@1.7.14/dist/twikoo.min.js
+		// 国际推荐: https://cdn.jsdelivr.net/npm/twikoo@1.7.14/dist/twikoo.min.js
+		jsUrl: "https://cdn.jsdelivr.net/npm/twikoo@1.7.14/dist/twikoo.min.js",
+		// Twikoo 自定义 CSS 文件地址，为空则不加载
+		cssUrl: "/assets/css/twikoo-custom.css",
+	},
 
 	//waline评论系统配置
 	waline: {
