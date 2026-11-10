@@ -72,3 +72,9 @@ tools/mvz-lab/out/
 
 # Twikoo 自托管服务的本地数据（评论库，可重建）
 services/twikoo/data/
+
+# EdgeOne 部署临时目录（由 dist + cloud-functions 组装）
+.deploy-edgeone/
+
+# EdgeOne CLI 项目链接与凭据
+.edgeone/

@@ -6,9 +6,10 @@ type: "twikoo",
 
 //twikoo评论系统配置
 twikoo: {
-	// Twikoo 后端服务地址（自托管实例）
-	// 本地开发走 services/twikoo 启动的 8080 端口；部署时改为公网地址
-	envId: "http://127.0.0.1:8080",
+	// Twikoo 后端服务地址
+	// 生产：EdgeOne Pages 同项目云函数 cloud-functions/api.js（Blob KV 持久化）
+	// 本地：http://127.0.0.1:8080（services/twikoo）
+	envId: "https://firefly-x-ivypesrv.edgeone.cool/twikoo",
 	// 设置 Twikoo 评论系统语言
 	lang: "zh-CN",
 	// 是否启用文章访问量统计功能
