@@ -69,3 +69,6 @@ tools/mvz-lab/out/
 # agent 工作日誌（逐日记录，属于个人上下文，不进源码树）
 # 只忽略 memory/，其余 .workbuddy/ 内容（如项目级 skills）仍可纳入版本控制
 .workbuddy/memory/
+
+# EdgeOne CLI 本地项目链接（如再次使用部署时生成）
+.edgeone/
